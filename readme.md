@@ -1,0 +1,40 @@
+# Android Photo Sync Script
+
+## Purpose
+
+This repository provides an interactive Bash script to safely sync or move photos from an Android phone (via SSH) to a local folder on your computer.  
+It is designed for workflows where the local folder is a temporary staging area (e.g., for importing into Lightroom), and includes robust options for filtering, logging, and safe deletion of files on the phone only after they have been imported.
+
+## Features
+
+- Interactive selection of photo subfolders (e.g., Camera, Screenshots, etc.)
+- Filter files by date, since last copy, or all
+- Option to copy or move files
+- Optionally delete files from the phone only after they have been imported
+- Configurable exclusions and logging
+- Colorful, user-friendly prompts
+
+## Requirements
+
+### On Your Computer (WSL/Linux)
+- **Bash** (the script is written for bash)
+- **rsync**
+- **ssh** (OpenSSH client)
+- **awk, grep, sort, stat** (standard GNU utilities)
+- **A working SSH keypair** for passwordless login to your phone
+
+### On Your Android Phone
+- **Termux** (free from F-Droid or Play Store)
+- **Termux:API** (optional, for advanced features)
+- **OpenSSH** (for SSH server)
+- **rsync** (installable via Termux)
+- **Storage permission** for Termux (`termux-setup-storage`)
+
+## Configuration
+
+1. Copy the example config:
+   ```sh
+   cp sync_config.example.conf sync_config.conf
+   ```
+2. Edit `sync_config.conf` with your own phone, SSH, and folder details.
+3. **Never share your real `sync_config.conf`!** It is in `.gitignore` and will not be published.
