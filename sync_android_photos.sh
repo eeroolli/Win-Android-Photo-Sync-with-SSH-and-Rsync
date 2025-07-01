@@ -73,8 +73,25 @@ done
 
 echo -e "${GREEN}Selected folder(s): $(join_by ', ' "${SELECTED_FOLDERS[@]}")${NC}"
 
+# Set up log files with year-based rotation
+YEAR=$(date +%Y)
+SUMMARY_LOG="sync_log_$YEAR.txt"
+FILE_LOG="sync_file_log_$YEAR.csv"
+
+# Write CSV header if file does not exist
+if [ ! -f "$FILE_LOG" ]; then
+  echo "datetime,action,src_path,dest_path,status" > "$FILE_LOG"
+fi
+
 # For each selected subfolder, prompt for options
 for SUBF in "${SELECTED_FOLDERS[@]}"; do
+  # --- Write summary header ---
+  NOW=$(date '+%Y-%m-%d %H:%M:%S')
+  echo "" >> "$SUMMARY_LOG"
+  echo "[$NOW] Processing subfolder: $SUBF" >> "$SUMMARY_LOG"
+  echo "  Selection rule: $FILE_FILTER" >> "$SUMMARY_LOG"
+  echo "  Action: $ACTION from $REMOTE_DIR/$SUBF to $LOCAL_DIR/$SUBF" >> "$SUMMARY_LOG"
+
   echo -e "\n${WHITE}--- Processing subfolder: $SUBF ---${NC}"
   # Prompt for copy or move
   echo -ne "${YELLOW}Do you want to copy or move files from $SUBF? (c/m) [c]: ${NC}"
@@ -95,6 +112,13 @@ for SUBF in "${SELECTED_FOLDERS[@]}"; do
   echo -ne "${YELLOW}Choose file selection [2]: ${NC}"
   read fsel
   [[ -z "$fsel" ]] && fsel=2
+
+  # --- Determine last sync/move time from CSV log if needed ---
+  LAST_SYNC_DATE=""
+  if [[ "$fsel" == "2" ]]; then
+    # Find the latest copy/move for this subfolder in the CSV log
+    LAST_SYNC_DATE=$(awk -F, -v subf="$SUBF" 'tolower($2) ~ /copy|move/ && $3 ~ "/"subf"/" {print $1}' "$FILE_LOG" | sort | tail -1)
+  fi
 
   case $fsel in
     1) FILE_FILTER="all";;
@@ -121,7 +145,6 @@ for SUBF in "${SELECTED_FOLDERS[@]}"; do
   if [[ "$FILE_FILTER" == "after" && -n "$START_DATE" ]]; then
     # Use the later of EXCLUDE_BEFORE_DATE and START_DATE
     if [[ -n "$EXCLUDE_BEFORE_DATE" ]]; then
-      # Compare dates (lexical comparison works for YYYY-MM-DD)
       if [[ "$START_DATE" < "$EXCLUDE_BEFORE_DATE" ]]; then
         FIND_CMD+=" -newermt '$EXCLUDE_BEFORE_DATE'"
       else
@@ -132,6 +155,8 @@ for SUBF in "${SELECTED_FOLDERS[@]}"; do
     fi
   elif [[ "$FILE_FILTER" == "before" && -n "$END_DATE" ]]; then
     FIND_CMD+=" ! -newermt '$END_DATE'"
+  elif [[ "$FILE_FILTER" == "since_last" && -n "$LAST_SYNC_DATE" ]]; then
+    FIND_CMD+=" -newermt '$LAST_SYNC_DATE'"
   elif [[ "$FILE_FILTER" == "all" ]]; then
     if [[ -n "$EXCLUDE_BEFORE_DATE" ]]; then
       FIND_CMD+=" -newermt '$EXCLUDE_BEFORE_DATE'"
@@ -143,8 +168,8 @@ for SUBF in "${SELECTED_FOLDERS[@]}"; do
 
   # Get oldest and newest file dates
   if [[ $FILE_COUNT -gt 0 ]]; then
-    OLDEST_FILE=$(ssh -i "$SSH_KEY" -p "$PHONE_PORT" "$PHONE_USER@$PHONE_IP" "$FIND_CMD -printf '%T@ %p\n' | sort -n | head -1 | awk '{print $2}'")
-    NEWEST_FILE=$(ssh -i "$SSH_KEY" -p "$PHONE_PORT" "$PHONE_USER@$PHONE_IP" "$FIND_CMD -printf '%T@ %p\n' | sort -n | tail -1 | awk '{print $2}'")
+    OLDEST_FILE=$(ssh -i "$SSH_KEY" -p "$PHONE_PORT" "$PHONE_USER@$PHONE_IP" "$FIND_CMD -printf '%T@ %p\n' | sort -n | head -1 | cut -d' ' -f2-")
+    NEWEST_FILE=$(ssh -i "$SSH_KEY" -p "$PHONE_PORT" "$PHONE_USER@$PHONE_IP" "$FIND_CMD -printf '%T@ %p\n' | sort -n | tail -1 | cut -d' ' -f2-")
     OLDEST_DATE=$(ssh -i "$SSH_KEY" -p "$PHONE_PORT" "$PHONE_USER@$PHONE_IP" "stat -c '%y' '$OLDEST_FILE' | cut -d'.' -f1")
     NEWEST_DATE=$(ssh -i "$SSH_KEY" -p "$PHONE_PORT" "$PHONE_USER@$PHONE_IP" "stat -c '%y' '$NEWEST_FILE' | cut -d'.' -f1")
   else
@@ -157,6 +182,9 @@ for SUBF in "${SELECTED_FOLDERS[@]}"; do
   echo -e "  ${GRAY}Number of files: ${WHITE}$FILE_COUNT${NC}"
   echo -e "  ${GRAY}Oldest file: ${WHITE}$OLDEST_DATE${NC}"
   echo -e "  ${GRAY}Newest file: ${WHITE}$NEWEST_DATE${NC}"
+  echo "  Number of files: $FILE_COUNT" >> "$SUMMARY_LOG"
+  echo "  Oldest file: $OLDEST_DATE" >> "$SUMMARY_LOG"
+  echo "  Newest file: $NEWEST_DATE" >> "$SUMMARY_LOG"
 
   # --- Deletion preview ---
   if [[ $DELETE_IMPORTED -eq 1 && $FILE_COUNT -gt 0 ]]; then
@@ -168,12 +196,15 @@ for SUBF in "${SELECTED_FOLDERS[@]}"; do
       DELETE_COUNT=0
     fi
     echo -e "  ${GRAY}Files to be deleted: ${WHITE}$DELETE_COUNT${NC}"
+    echo "  Files to be deleted: $DELETE_COUNT" >> "$SUMMARY_LOG"
   fi
 
   # --- Confirm ---
-  read -p "${YELLOW}Proceed with sync for $SUBF? (y/N): ${NC}" go
+  echo -ne "${YELLOW}Proceed with sync for $SUBF? (y/N): ${NC}"
+  read go
   if [[ ! "$go" =~ ^[Yy]$ ]]; then
     echo -e "${RED}Skipping $SUBF${NC}"
+    echo "  Skipped by user." >> "$SUMMARY_LOG"
     continue
   fi
 
@@ -184,8 +215,15 @@ for SUBF in "${SELECTED_FOLDERS[@]}"; do
   [[ "$ACTION" == "copy" ]] && RSYNC_OPTS+=" --ignore-existing"
   RSYNC_CMD="rsync $RSYNC_OPTS -e \"ssh -i $SSH_KEY -p $PHONE_PORT\" $PHONE_USER@$PHONE_IP:'$REMOTE_SUBFOLDER/' '$LOCAL_SUBFOLDER/'"
   echo -e "${GREEN}Starting sync for $SUBF...${NC}"
-  eval "$RSYNC_CMD"
+  # Log each file copied/moved
+  eval "$RSYNC_CMD --out-format='%n'" | while read -r relfile; do
+    NOW=$(date '+%Y-%m-%d %H:%M:%S')
+    src="$REMOTE_SUBFOLDER/$relfile"
+    dest="$LOCAL_SUBFOLDER/$relfile"
+    echo "$NOW,$ACTION,$src,$dest,success" >> "$FILE_LOG"
+  done
   echo -e "${GREEN}Sync complete for $SUBF.${NC}"
+  echo "  Sync complete for $SUBF." >> "$SUMMARY_LOG"
 
   # --- Update import log ---
   # Log all files now present in local subfolder
@@ -195,60 +233,63 @@ for SUBF in "${SELECTED_FOLDERS[@]}"; do
 
   # --- Deletion step ---
   if [[ $DELETE_IMPORTED -eq 1 && $DELETE_COUNT -gt 0 ]]; then
-    echo -e "${YELLOW}About to delete $DELETE_COUNT files from phone in $SUBF. Continue? (y/N): ${NC}"
+    echo -ne "${YELLOW}About to delete $DELETE_COUNT files from phone in $SUBF. Continue? (y/N): ${NC}"
     read del_confirm
     if [[ "$del_confirm" =~ ^[Yy]$ ]]; then
       echo "$FILES_TO_DELETE" | while read -r del_file; do
-        ssh -i "$SSH_KEY" -p "$PHONE_PORT" "$PHONE_USER@$PHONE_IP" "rm -f '$del_file'"
+        ssh -i "$SSH_KEY" -p "$PHONE_PORT" "$PHONE_USER@$PHONE_IP" "rm -f '$del_file'" && \
+        NOW=$(date '+%Y-%m-%d %H:%M:%S'); echo "$NOW,deleted,$del_file,,success" >> "$FILE_LOG"
       done
       echo -e "${GREEN}Deleted $DELETE_COUNT files from phone in $SUBF.${NC}"
+      echo "  Deleted $DELETE_COUNT files from phone in $SUBF." >> "$SUMMARY_LOG"
     else
       echo -e "${RED}Deletion cancelled for $SUBF.${NC}"
+      echo "  Deletion cancelled for $SUBF." >> "$SUMMARY_LOG"
     fi
   fi
 
 done
 
-echo "📁 Ensuring local directory $LOCAL_DIR exists ..."
-mkdir -p "$LOCAL_DIR"
+# echo "📁 Ensuring local directory $LOCAL_DIR exists ..."
+# mkdir -p "$LOCAL_DIR"
 
-echo "⚙️  Preparing rsync options ..."
-# Determine rsync options
-RSYNC_OPTS="-av --progress"
-[[ "$ACTION" == "copy" ]] && RSYNC_OPTS+=" --ignore-existing"
+# echo "⚙️  Preparing rsync options ..."
+# # Determine rsync options
+# RSYNC_OPTS="-av --progress"
+# [[ "$ACTION" == "copy" ]] && RSYNC_OPTS+=" --ignore-existing"
 
-# Build rsync command
-RSYNC_CMD="rsync $RSYNC_OPTS -e \"ssh -i $SSH_KEY -p $PHONE_PORT\" $PHONE_USER@$PHONE_IP:$REMOTE_DIR $LOCAL_DIR"
+# # Build rsync command
+# RSYNC_CMD="rsync $RSYNC_OPTS -e \"ssh -i $SSH_KEY -p $PHONE_PORT\" $PHONE_USER@$PHONE_IP:$REMOTE_DIR $LOCAL_DIR"
 
-echo "🔎 Counting files to transfer (dry run) ..."
-# Count files to transfer
-DRYRUN_OUTPUT=$(eval "$RSYNC_CMD --dry-run --out-format='%n' 2>/dev/null")
-FILE_COUNT=$(echo "$DRYRUN_OUTPUT" | grep -c ".")
-echo "📦 Files to be transferred: $FILE_COUNT"
+# echo "🔎 Counting files to transfer (dry run) ..."
+# # Count files to transfer
+# DRYRUN_OUTPUT=$(eval "$RSYNC_CMD --dry-run --out-format='%n' 2>/dev/null")
+# FILE_COUNT=$(echo "$DRYRUN_OUTPUT" | grep -c ".")
+# echo "📦 Files to be transferred: $FILE_COUNT"
 
-echo "📝 Logging sync start ..."
-# Log start
-START_TIME=$(date '+%Y-%m-%d %H:%M:%S')
-echo "[$START_TIME] Starting sync: $ACTION" >> "$LOG_FILE"
+# echo "📝 Logging sync start ..."
+# # Log start
+# START_TIME=$(date '+%Y-%m-%d %H:%M:%S')
+# echo "[$START_TIME] Starting sync: $ACTION" >> "$LOG_FILE"
 
-echo "🚀 Starting file transfer from $PHONE_USER@$PHONE_IP:$REMOTE_DIR to $LOCAL_DIR ..."
-# Execute transfer
-eval "$RSYNC_CMD"
-echo "📥 File transfer complete."
+# echo "🚀 Starting file transfer from $PHONE_USER@$PHONE_IP:$REMOTE_DIR to $LOCAL_DIR ..."
+# # Execute transfer
+# eval "$RSYNC_CMD"
+# echo "📥 File transfer complete."
 
-# Log completion
-END_TIME=$(date '+%Y-%m-%d %H:%M:%S')
-echo "[$END_TIME] Completed sync. $FILE_COUNT files transferred." >> "$LOG_FILE"
+# # Log completion
+# END_TIME=$(date '+%Y-%m-%d %H:%M:%S')
+# echo "[$END_TIME] Completed sync. $FILE_COUNT files transferred." >> "$LOG_FILE"
 
-echo "📝 Sync completion logged."
+# echo "📝 Sync completion logged."
 
-# Optionally remove files if move
-if [[ "$ACTION" == "move" ]]; then
-  echo "🗑️  Deleting remote files from $REMOTE_DIR ..."
-  ssh -i $SSH_KEY -p $PHONE_PORT "$PHONE_USER@$PHONE_IP" "rm -rf $REMOTE_DIR/*"
-  echo "🧹 Remote files deleted."
-  echo "[$END_TIME] Remote files deleted after move." >> "$LOG_FILE"
-fi
+# # Optionally remove files if move
+# if [[ "$ACTION" == "move" ]]; then
+#   echo "🗑️  Deleting remote files from $REMOTE_DIR ..."
+#   ssh -i $SSH_KEY -p $PHONE_PORT "$PHONE_USER@$PHONE_IP" "rm -rf $REMOTE_DIR/*"
+#   echo "🧹 Remote files deleted."
+#   echo "[$END_TIME] Remote files deleted after move." >> "$LOG_FILE"
+# fi
 
-echo "✅ Sync completed: $FILE_COUNT files processed."
+# echo "✅ Sync completed: $FILE_COUNT files processed."
 
