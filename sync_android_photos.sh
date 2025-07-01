@@ -109,6 +109,7 @@ for SUBF in "${SELECTED_FOLDERS[@]}"; do
   echo "  2) Since last copy/move (default)"
   echo "  3) After a date"
   echo "  4) Before a date"
+  echo "  5) Between two dates"
   echo -ne "${YELLOW}Choose file selection [2]: ${NC}"
   read fsel
   [[ -z "$fsel" ]] && fsel=2
@@ -116,8 +117,8 @@ for SUBF in "${SELECTED_FOLDERS[@]}"; do
   # --- Determine last sync/move time from CSV log if needed ---
   LAST_SYNC_DATE=""
   if [[ "$fsel" == "2" ]]; then
-    # Find the latest copy/move for this subfolder in the CSV log
-    LAST_SYNC_DATE=$(awk -F, -v subf="$SUBF" 'tolower($2) ~ /copy|move/ && $3 ~ "/"subf"/" {print $1}' "$FILE_LOG" | sort | tail -1)
+    LAST_SYNC_DATE=$(awk -F, -v subf="$SUBF" 'tolower($2) ~ /copy|move/ && $3 ~ subf {print $1}' "$FILE_LOG" | sort | tail -1)
+    echo "DEBUG: LAST_SYNC_DATE for $SUBF is '$LAST_SYNC_DATE'"
   fi
 
   case $fsel in
@@ -130,6 +131,12 @@ for SUBF in "${SELECTED_FOLDERS[@]}"; do
       echo -ne "${YELLOW}Enter end date (format: YYYY-MM-DD): ${NC}"
       read END_DATE
       FILE_FILTER="before";;
+    5)
+      echo -ne "${YELLOW}Enter start date (format: YYYY-MM-DD): ${NC}"
+      read START_DATE
+      echo -ne "${YELLOW}Enter end date (format: YYYY-MM-DD): ${NC}"
+      read END_DATE
+      FILE_FILTER="between";;
     *) FILE_FILTER="since_last";;
   esac
 
@@ -155,6 +162,8 @@ for SUBF in "${SELECTED_FOLDERS[@]}"; do
     fi
   elif [[ "$FILE_FILTER" == "before" && -n "$END_DATE" ]]; then
     FIND_CMD+=" ! -newermt '$END_DATE'"
+  elif [[ "$FILE_FILTER" == "between" && -n "$START_DATE" && -n "$END_DATE" ]]; then
+    FIND_CMD+=" -newermt '$START_DATE' ! -newermt '$END_DATE'"
   elif [[ "$FILE_FILTER" == "since_last" && -n "$LAST_SYNC_DATE" ]]; then
     FIND_CMD+=" -newermt '$LAST_SYNC_DATE'"
   elif [[ "$FILE_FILTER" == "all" ]]; then
@@ -162,6 +171,7 @@ for SUBF in "${SELECTED_FOLDERS[@]}"; do
       FIND_CMD+=" -newermt '$EXCLUDE_BEFORE_DATE'"
     fi
   fi
+  echo "DEBUG: FIND_CMD is $FIND_CMD"
   # Get file list from phone
   FILE_LIST=$(ssh -i "$SSH_KEY" -p "$PHONE_PORT" "$PHONE_USER@$PHONE_IP" "$FIND_CMD" | sort)
   FILE_COUNT=$(echo "$FILE_LIST" | grep -c ".")
