@@ -29,6 +29,20 @@ It is designed for workflows where the local folder is a temporary staging area 
 - **OpenSSH** (for SSH server)
 - **rsync** (installable via Termux)
 - **Storage permission** for Termux (`termux-setup-storage`)
+- **The script will fail if the phone goes to sleep. Use Termux-wake-lock.
+The following script will create a .bashrc on your phone. Edit it (note same info as in the sync_config file.) Run it from WSL:
+""" 
+ssh -i /path/to/your/private_key -p 8022 your_termux_user@your_phone_ip 'cat > ~/.bashrc' <<'EOF'
+# ~/.bashrc for Termux
+
+case $- in
+  *i*)
+    termux-wake-lock
+    pgrep -x sshd > /dev/null || sshd
+    ;;
+esac
+EOF
+"""
 
 ## Configuration
 
