@@ -250,46 +250,5 @@ for SUBF in "${SELECTED_FOLDERS[@]}"; do
 
 done
 
-# echo "📁 Ensuring local directory $LOCAL_DIR exists ..."
-# mkdir -p "$LOCAL_DIR"
 
-# echo "⚙️  Preparing rsync options ..."
-# # Determine rsync options
-# RSYNC_OPTS="-av --progress"
-# [[ "$ACTION" == "copy" ]] && RSYNC_OPTS+=" --ignore-existing"
-
-# # Build rsync command
-# RSYNC_CMD="rsync $RSYNC_OPTS -e \"ssh -i $SSH_KEY -p $PHONE_PORT\" $PHONE_USER@$PHONE_IP:$REMOTE_DIR $LOCAL_DIR"
-
-# echo "🔎 Counting files to transfer (dry run) ..."
-# # Count files to transfer
-# DRYRUN_OUTPUT=$(eval "$RSYNC_CMD --dry-run --out-format='%n' 2>/dev/null")
-# FILE_COUNT=$(echo "$DRYRUN_OUTPUT" | grep -c ".")
-# echo "📦 Files to be transferred: $FILE_COUNT"
-
-# echo "📝 Logging sync start ..."
-# # Log start
-# START_TIME=$(date '+%Y-%m-%d %H:%M:%S')
-# echo "[$START_TIME] Starting sync: $ACTION" >> "$LOG_FILE"
-
-# echo "🚀 Starting file transfer from $PHONE_USER@$PHONE_IP:$REMOTE_DIR to $LOCAL_DIR ..."
-# # Execute transfer
-# eval "$RSYNC_CMD"
-# echo "📥 File transfer complete."
-
-# # Log completion
-# END_TIME=$(date '+%Y-%m-%d %H:%M:%S')
-# echo "[$END_TIME] Completed sync. $FILE_COUNT files transferred." >> "$LOG_FILE"
-
-# echo "📝 Sync completion logged."
-
-# # Optionally remove files if move
-# if [[ "$ACTION" == "move" ]]; then
-#   echo "🗑️  Deleting remote files from $REMOTE_DIR ..."
-#   ssh -i $SSH_KEY -p $PHONE_PORT "$PHONE_USER@$PHONE_IP" "rm -rf $REMOTE_DIR/*"
-#   echo "🧹 Remote files deleted."
-#   echo "[$END_TIME] Remote files deleted after move." >> "$LOG_FILE"
-# fi
-
-# echo "✅ Sync completed: $FILE_COUNT files processed."
 
