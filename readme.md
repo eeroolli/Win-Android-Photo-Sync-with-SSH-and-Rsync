@@ -38,9 +38,8 @@ It is designed for workflows where the local folder is a temporary staging area 
    cp sync_config.example.conf sync_config.conf
    ```
 2. Edit `sync_config.conf` with your own phone, SSH, and folder details.
-3. **Never share your real `sync_config.conf`!** It is in `.gitignore` and will not be published.
-4. Install installing Termux
-5. In termux run
+3. Install Termux on your phone.
+4. In termux run
    ```
    pkg update
    pkg install openssh
@@ -62,3 +61,7 @@ case $- in
 esac
 EOF
 ~~~ 
+
+## Use
+1. Start Termux on your phone. It automatically now runs the ssh deamon listeing for ssh connections.
+2. Start a WSL terminal on your computer and run the sync_android_photos.sh
