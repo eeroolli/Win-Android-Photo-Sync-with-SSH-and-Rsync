@@ -46,8 +46,19 @@ It is designed for workflows where the local folder is a temporary staging area 
    pkg install rsync
    termux-setup-storage
    sshd
+   whoami
+   passwd
    ```
-    to install the SSH server, which runs as a deamon (sshd).
+    to install the SSH server, which runs as a deamon (sshd). whoami shows your username it should be u0_592. Finally, you give a password for yourself
+5. Test SSH. In WSL terminal write
+~~~
+ssh -p 8022 u0_592@the-ipnumber-of-your-phone
+~~~
+6. Create and copy the SSH key.  (if you already have one, you can use that instead)
+~~~
+ssh-keygen -t ed25519
+ssh-copy-id -p u0_592@the-ipnumber-of-your-phone
+~~~
 7. The following script will create a .bashrc on your phone, so that you do not need to start termux-wake-lock and sshd everytime. Edit it (note same info as in the sync_config file.) Run it from WSL:
 ~~~
 ssh -i /path/to/your/private_key -p 8022 your_termux_user@your_phone_ip 'cat > ~/.bashrc' <<'EOF'
