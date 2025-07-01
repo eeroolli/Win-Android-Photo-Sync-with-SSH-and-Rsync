@@ -25,13 +25,32 @@ It is designed for workflows where the local folder is a temporary staging area 
 
 ### On Your Android Phone
 - **Termux** (free from F-Droid or Play Store)
-- **Termux:API** (optional, for advanced features)
 - **OpenSSH** (for SSH server)
 - **rsync** (installable via Termux)
 - **Storage permission** for Termux (`termux-setup-storage`)
 - **The script will fail if the phone goes to sleep. Use Termux-wake-lock.
-The following script will create a .bashrc on your phone. Edit it (note same info as in the sync_config file.) Run it from WSL:
-""" 
+
+
+## Configuration
+
+1. Copy the example config:
+   ```sh
+   cp sync_config.example.conf sync_config.conf
+   ```
+2. Edit `sync_config.conf` with your own phone, SSH, and folder details.
+3. **Never share your real `sync_config.conf`!** It is in `.gitignore` and will not be published.
+4. Install installing Termux
+5. In termux run
+   ```
+   pkg update
+   pkg install openssh
+   pkg install rsync
+   termux-setup-storage
+   sshd
+   ```
+    to install the SSH server, which runs as a deamon (sshd).
+7. The following script will create a .bashrc on your phone, so that you do not need to start termux-wake-lock and sshd everytime. Edit it (note same info as in the sync_config file.) Run it from WSL:
+~~~
 ssh -i /path/to/your/private_key -p 8022 your_termux_user@your_phone_ip 'cat > ~/.bashrc' <<'EOF'
 # ~/.bashrc for Termux
 
@@ -42,13 +61,4 @@ case $- in
     ;;
 esac
 EOF
-"""
-
-## Configuration
-
-1. Copy the example config:
-   ```sh
-   cp sync_config.example.conf sync_config.conf
-   ```
-2. Edit `sync_config.conf` with your own phone, SSH, and folder details.
-3. **Never share your real `sync_config.conf`!** It is in `.gitignore` and will not be published.
+~~~ 
