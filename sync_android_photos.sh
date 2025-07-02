@@ -199,6 +199,12 @@ for SUBF in "${SELECTED_FOLDERS[@]}"; do
   echo "  Oldest file: $OLDEST_DATE" >> "$SUMMARY_LOG"
   echo "  Newest file: $NEWEST_DATE" >> "$SUMMARY_LOG"
 
+   if [[ $FILE_COUNT -eq 0 ]]; then
+    echo -e "${YELLOW}No files to copy or move for $SUBF. Nothing to do.${NC}"
+    echo "  No files to copy or move for $SUBF. Nothing to do." >> "$SUMMARY_LOG"
+    continue
+  fi
+
   # --- Deletion preview ---
   if [[ $DELETE_IMPORTED -eq 1 && $FILE_COUNT -gt 0 ]]; then
     # Only delete files that are in the import log
