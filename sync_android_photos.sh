@@ -29,8 +29,10 @@ WHITE='\033[1;37m'
 GRAY='\033[0;37m'
 NC='\033[0m'
 
-CONFIG_FILE="sync_config.conf"
-LOG_FILE="sync_log.txt"
+# resolve script directory for config and logs
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CONFIG_FILE="$SCRIPT_DIR/sync_config.conf"
+LOG_FILE="$SCRIPT_DIR/sync_log.txt"
 
 echo -e "${YELLOW}🔧 Loading configuration from $CONFIG_FILE ...${NC}"
 # Load config
@@ -75,8 +77,9 @@ echo -e "${GREEN}Selected folder(s): $(join_by ', ' "${SELECTED_FOLDERS[@]}")${N
 
 # Set up log files with year-based rotation
 YEAR=$(date +%Y)
-SUMMARY_LOG="sync_log_$YEAR.txt"
-FILE_LOG="sync_file_log_$YEAR.csv"
+SUMMARY_LOG="$SCRIPT_DIR/sync_log_$YEAR.txt"
+FILE_LOG="$SCRIPT_DIR/sync_file_log_$YEAR.csv"
+IMPORT_LOG_FILE="$SCRIPT_DIR/imported_files.log"
 
 # Write CSV header if file does not exist
 if [ ! -f "$FILE_LOG" ]; then
