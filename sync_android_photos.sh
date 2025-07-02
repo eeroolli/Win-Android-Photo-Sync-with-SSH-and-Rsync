@@ -51,7 +51,7 @@ join_by() { local IFS="$1"; shift; echo "$*"; }
 IFS=',' read -ra EXCL <<< "$EXCLUDE_FOLDERS"
 EXCL_PATTERN=$(join_by '|' "${EXCL[@]}")
 
-SUBFOLDERS=$(ssh -i "$SSH_KEY" -p "$PHONE_PORT" "$PHONE_USER@$PHONE_IP" "ls -1d $REMOTE_DIR*/ 2>/dev/null | xargs -n1 basename" | grep -vE "^($EXCL_PATTERN)")
+SUBFOLDERS=$(ssh -i "$SSH_KEY" -p "$PHONE_PORT" "$PHONE_USER@$PHONE_IP" "ls -1d $REMOTE_DIR*/ 2>/dev/null | xargs -n1 basename" | grep -vE "^($EXCL_PATTERN)" || true)
 
 if [ -z "$SUBFOLDERS" ]; then
   echo -e "${RED}No subfolders found in $REMOTE_DIR!${NC}"
@@ -176,15 +176,15 @@ for SUBF in "${SELECTED_FOLDERS[@]}"; do
   fi
   echo "DEBUG: FIND_CMD is $FIND_CMD"
   # Get file list from phone
-  FILE_LIST=$(ssh -i "$SSH_KEY" -p "$PHONE_PORT" "$PHONE_USER@$PHONE_IP" "$FIND_CMD" | sort)
-  FILE_COUNT=$(echo "$FILE_LIST" | grep -c ".")
+  FILE_LIST=$(ssh -i "$SSH_KEY" -p "$PHONE_PORT" "$PHONE_USER@$PHONE_IP" "$FIND_CMD" | sort || true)
+  FILE_COUNT=$(echo "$FILE_LIST" | grep -c . || true)
 
   # Get oldest and newest file dates
   if [[ $FILE_COUNT -gt 0 ]]; then
-    OLDEST_FILE=$(ssh -i "$SSH_KEY" -p "$PHONE_PORT" "$PHONE_USER@$PHONE_IP" "$FIND_CMD -printf '%T@ %p\n' | sort -n | head -1 | cut -d' ' -f2-")
-    NEWEST_FILE=$(ssh -i "$SSH_KEY" -p "$PHONE_PORT" "$PHONE_USER@$PHONE_IP" "$FIND_CMD -printf '%T@ %p\n' | sort -n | tail -1 | cut -d' ' -f2-")
-    OLDEST_DATE=$(ssh -i "$SSH_KEY" -p "$PHONE_PORT" "$PHONE_USER@$PHONE_IP" "stat -c '%y' '$OLDEST_FILE' | cut -d'.' -f1")
-    NEWEST_DATE=$(ssh -i "$SSH_KEY" -p "$PHONE_PORT" "$PHONE_USER@$PHONE_IP" "stat -c '%y' '$NEWEST_FILE' | cut -d'.' -f1")
+    OLDEST_FILE=$(ssh -i "$SSH_KEY" -p "$PHONE_PORT" "$PHONE_USER@$PHONE_IP" "$FIND_CMD -printf '%T@ %p\n' | sort -n | head -1 | cut -d' ' -f2-" || true)
+    NEWEST_FILE=$(ssh -i "$SSH_KEY" -p "$PHONE_PORT" "$PHONE_USER@$PHONE_IP" "$FIND_CMD -printf '%T@ %p\n' | sort -n | tail -1 | cut -d' ' -f2-" || true)
+    OLDEST_DATE=$(ssh -i "$SSH_KEY" -p "$PHONE_PORT" "$PHONE_USER@$PHONE_IP" "stat -c '%y' '$OLDEST_FILE' | cut -d'.' -f1" || true)
+    NEWEST_DATE=$(ssh -i "$SSH_KEY" -p "$PHONE_PORT" "$PHONE_USER@$PHONE_IP" "stat -c '%y' '$NEWEST_FILE' | cut -d'.' -f1" || true)
   else
     OLDEST_DATE="-"
     NEWEST_DATE="-"
@@ -209,8 +209,8 @@ for SUBF in "${SELECTED_FOLDERS[@]}"; do
   if [[ $DELETE_IMPORTED -eq 1 && $FILE_COUNT -gt 0 ]]; then
     # Only delete files that are in the import log
     if [ -f "$IMPORT_LOG_FILE" ]; then
-      FILES_TO_DELETE=$(comm -12 <(echo "$FILE_LIST" | sort) <(awk '{print $1}' "$IMPORT_LOG_FILE" | sort))
-      DELETE_COUNT=$(echo "$FILES_TO_DELETE" | grep -c ".")
+      FILES_TO_DELETE=$(comm -12 <(echo "$FILE_LIST" | sort || true) <(awk '{print $1}' "$IMPORT_LOG_FILE" | sort || true) || true)
+      DELETE_COUNT=$(echo "$FILES_TO_DELETE" | grep -c . || true)
     else
       DELETE_COUNT=0
     fi
