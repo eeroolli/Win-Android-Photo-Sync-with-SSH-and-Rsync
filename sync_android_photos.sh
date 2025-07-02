@@ -121,7 +121,7 @@ for SUBF in "${SELECTED_FOLDERS[@]}"; do
   LAST_SYNC_DATE=""
   if [[ "$fsel" == "2" ]]; then
     LAST_SYNC_DATE=$(awk -F, -v subf="$SUBF" 'tolower($2) ~ /copy|move/ && $3 ~ subf {print $1}' "$FILE_LOG" | sort | tail -1)
-    echo "DEBUG: LAST_SYNC_DATE for $SUBF is '$LAST_SYNC_DATE'"
+    echo "LAST_SYNC_DATE for $SUBF is '$LAST_SYNC_DATE'"
   fi
 
   case $fsel in
@@ -174,7 +174,7 @@ for SUBF in "${SELECTED_FOLDERS[@]}"; do
       FIND_CMD+=" -newermt '$EXCLUDE_BEFORE_DATE'"
     fi
   fi
-  echo "DEBUG: FIND_CMD is $FIND_CMD"
+  # echo "DEBUG: FIND_CMD is $FIND_CMD"
   # Get file list from phone
   FILE_LIST=$(ssh -i "$SSH_KEY" -p "$PHONE_PORT" "$PHONE_USER@$PHONE_IP" "$FIND_CMD" | sort || true)
   FILE_COUNT=$(echo "$FILE_LIST" | grep -c . || true)
