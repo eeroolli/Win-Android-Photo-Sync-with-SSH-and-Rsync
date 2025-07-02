@@ -91,6 +91,15 @@ echo -e "${GREEN}Selected folder(s): $(IFS=, ; echo "${SELECTED_FOLDERS[*]}")${N
 YEAR=$(date +%Y)
 SUMMARY_LOG="delete_imported_summary_$YEAR.txt"
 
+# Ask for dry run mode
+DRY_RUN=0
+echo -ne "${YELLOW}Dry run (no files will be deleted)? (y/N): ${NC}"
+read dryrun_confirm
+if [[ "$dryrun_confirm" =~ ^[Yy]$ ]]; then
+  DRY_RUN=1
+  echo -e "${GRAY}Dry run mode enabled. No files will actually be deleted.${NC}"
+fi
+
 # --- Step 1: Generate/cached hashes for KOPIERT ---
 echo -e "${YELLOW}Scanning $KOPIERT for files...${NC}"
 find "$KOPIERT" -type f | sort > kopiert_files.txt
@@ -138,6 +147,17 @@ for SRCFOLDER in "${SELECTED_FOLDERS[@]}"; do
   if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
     echo -e "${RED}Deletion cancelled for $SRCFOLDER.${NC}"
     echo "  Deletion cancelled by user for $SRCFOLDER." >> "$SUMMARY_LOG"
+    continue
+  fi
+  if [[ $DRY_RUN -eq 1 ]]; then
+    echo -e "${YELLOW}Dry run: The following files would be deleted from $SRCFOLDER:${NC}"
+    while read -r file; do
+      echo -e "${GRAY}Would delete: $file${NC}"
+      NOW=$(date '+%Y-%m-%d %H:%M:%S')
+      echo "$NOW,dryrun,$file,success" >> "$SUMMARY_LOG"
+    done < files_to_delete.txt
+    echo -e "${GREEN}Dry run complete. $TO_DELETE files would be deleted from $SRCFOLDER.${NC}"
+    echo "  Dry run complete. $TO_DELETE files would be deleted from $SRCFOLDER." >> "$SUMMARY_LOG"
     continue
   fi
   echo -e "${YELLOW}Deleting files from $SRCFOLDER...${NC}"
