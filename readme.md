@@ -35,9 +35,9 @@ It is designed for workflows where the local folder is a temporary staging area 
 
 1. Copy the example config:
    ```sh
-   cp sync_config.example.conf sync_config.conf
+   cp import_config.example.conf import_config.conf
    ```
-2. Edit `sync_config.conf` with your own phone, SSH, and folder details.
+2. Edit `import_config.conf` with your own phone, SSH, and folder details.
 3. Install Termux on your phone.
 4. In termux run
    ```
@@ -59,7 +59,7 @@ ssh -p 8022 u0_592@the-ipnumber-of-your-phone
 ssh-keygen -t ed25519
 ssh-copy-id -p u0_592@the-ipnumber-of-your-phone
 ~~~
-7. The following script will create a .bashrc on your phone, so that you do not need to start termux-wake-lock and sshd everytime. Edit it (note same info as in the sync_config file.) Run it from WSL:
+7. The following script will create a .bashrc on your phone, so that you do not need to start termux-wake-lock and sshd everytime. Edit it (note same info as in the import_config file.) Run it from WSL:
 ~~~
 ssh -i /path/to/your/private_key -p 8022 your_termux_user@your_phone_ip 'cat > ~/.bashrc' <<'EOF'
 # ~/.bashrc for Termux
@@ -75,4 +75,4 @@ EOF
 
 ## Use
 1. Start Termux on your phone. It automatically now runs the ssh deamon listeing for ssh connections.
-2. Start a WSL terminal on your computer and run the sync_android_photos.sh
+2. Start a WSL terminal on your computer and run the import_from_device_to_comp.sh

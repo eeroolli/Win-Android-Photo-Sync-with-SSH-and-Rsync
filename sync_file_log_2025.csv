@@ -1,29 +1,0 @@
-datetime,action,src_path,dest_path,status
-2025-07-01 12:47:04,copy,/storage/emulated/0/DCIM//Camera/receiving incremental file list,/mnt/i/FraMobil//Camera/receiving incremental file list,success
-2025-07-01 12:47:05,copy,/storage/emulated/0/DCIM//Camera/./,/mnt/i/FraMobil//Camera/./,success
-2025-07-01 12:47:05,copy,/storage/emulated/0/DCIM//Camera/Burstshoot/,/mnt/i/FraMobil//Camera/Burstshoot/,success
-2025-07-01 12:47:05,copy,/storage/emulated/0/DCIM//Camera/Burstshoot/IMG_20221002_174820/,/mnt/i/FraMobil//Camera/Burstshoot/IMG_20221002_174820/,success
-2025-07-01 12:47:05,copy,/storage/emulated/0/DCIM//Camera/Burstshoot/IMG_20221002_174824/,/mnt/i/FraMobil//Camera/Burstshoot/IMG_20221002_174824/,success
-2025-07-01 12:47:05,copy,/storage/emulated/0/DCIM//Camera/Burstshoot/IMG_20221009_151105/,/mnt/i/FraMobil//Camera/Burstshoot/IMG_20221009_151105/,success
-2025-07-01 12:47:05,copy,/storage/emulated/0/DCIM//Camera/Raw/,/mnt/i/FraMobil//Camera/Raw/,success
-2025-07-01 12:47:05,copy,/storage/emulated/0/DCIM//Camera/,/mnt/i/FraMobil//Camera/,success
-2025-07-01 12:47:05,copy,/storage/emulated/0/DCIM//Camera/sent 49 bytes  received 33,284 bytes  13,333.20 bytes/sec,/mnt/i/FraMobil//Camera/sent 49 bytes  received 33,284 bytes  13,333.20 bytes/sec,success
-2025-07-01 12:47:05,copy,/storage/emulated/0/DCIM//Camera/total size is 9,959,029,153  speedup is 298,773.86,/mnt/i/FraMobil//Camera/total size is 9,959,029,153  speedup is 298,773.86,success
-2025-07-02 00:34:06,copy,/storage/emulated/0/DCIM//Camera/receiving incremental file list,/mnt/i/FraMobil//Camera/receiving incremental file list,success
-2025-07-02 00:34:07,copy,/storage/emulated/0/DCIM//Camera/./,/mnt/i/FraMobil//Camera/./,success
-2025-07-02 00:34:07,copy,/storage/emulated/0/DCIM//Camera/IMG_20250701_202617.jpg,/mnt/i/FraMobil//Camera/IMG_20250701_202617.jpg,success
-2025-07-02 00:34:07,copy,/storage/emulated/0/DCIM//Camera/              0   0%    0.00kB/s    0:00:00        3,134,312 100%    6.06MB/s    0:00:00 (xfr#1, to-chk=193/1158),/mnt/i/FraMobil//Camera/              0   0%    0.00kB/s    0:00:00        3,134,312 100%    6.06MB/s    0:00:00 (xfr#1, to-chk=193/1158),success
-2025-07-02 00:34:07,copy,/storage/emulated/0/DCIM//Camera/IMG_20250701_202624.jpg,/mnt/i/FraMobil//Camera/IMG_20250701_202624.jpg,success
-2025-07-02 00:34:15,copy,/storage/emulated/0/DCIM//Camera/              0   0%    0.00kB/s    0:00:00        2,883,584  91%  363.31kB/s    0:00:00        3,136,582 100%  394.52kB/s    0:00:07 (xfr#2, to-chk=192/1158),/mnt/i/FraMobil//Camera/              0   0%    0.00kB/s    0:00:00        2,883,584  91%  363.31kB/s    0:00:00        3,136,582 100%  394.52kB/s    0:00:07 (xfr#2, to-chk=192/1158),success
-2025-07-02 00:34:15,copy,/storage/emulated/0/DCIM//Camera/IMG_20250701_202711.jpg,/mnt/i/FraMobil//Camera/IMG_20250701_202711.jpg,success
-2025-07-02 00:34:15,copy,/storage/emulated/0/DCIM//Camera/              0   0%    0.00kB/s    0:00:00        1,389,201 100%   16.56MB/s    0:00:00 (xfr#3, to-chk=191/1158),/mnt/i/FraMobil//Camera/              0   0%    0.00kB/s    0:00:00        1,389,201 100%   16.56MB/s    0:00:00 (xfr#3, to-chk=191/1158),success
-2025-07-02 00:34:15,copy,/storage/emulated/0/DCIM//Camera/IMG_20250701_202735.jpg,/mnt/i/FraMobil//Camera/IMG_20250701_202735.jpg,success
-2025-07-02 00:34:15,copy,/storage/emulated/0/DCIM//Camera/              0   0%    0.00kB/s    0:00:00        1,559,013 100%    5.61MB/s    0:00:00 (xfr#4, to-chk=190/1158),/mnt/i/FraMobil//Camera/              0   0%    0.00kB/s    0:00:00        1,559,013 100%    5.61MB/s    0:00:00 (xfr#4, to-chk=190/1158),success
-2025-07-02 00:34:15,copy,/storage/emulated/0/DCIM//Camera/Burstshoot/,/mnt/i/FraMobil//Camera/Burstshoot/,success
-2025-07-02 00:34:15,copy,/storage/emulated/0/DCIM//Camera/Burstshoot/IMG_20221002_174820/,/mnt/i/FraMobil//Camera/Burstshoot/IMG_20221002_174820/,success
-2025-07-02 00:34:15,copy,/storage/emulated/0/DCIM//Camera/Burstshoot/IMG_20221002_174824/,/mnt/i/FraMobil//Camera/Burstshoot/IMG_20221002_174824/,success
-2025-07-02 00:34:15,copy,/storage/emulated/0/DCIM//Camera/Burstshoot/IMG_20221009_151105/,/mnt/i/FraMobil//Camera/Burstshoot/IMG_20221009_151105/,success
-2025-07-02 00:34:15,copy,/storage/emulated/0/DCIM//Camera/Raw/,/mnt/i/FraMobil//Camera/Raw/,success
-2025-07-02 00:34:15,copy,/storage/emulated/0/DCIM//Camera/,/mnt/i/FraMobil//Camera/,success
-2025-07-02 00:34:15,copy,/storage/emulated/0/DCIM//Camera/sent 129 bytes  received 9,254,905 bytes  881,431.81 bytes/sec,/mnt/i/FraMobil//Camera/sent 129 bytes  received 9,254,905 bytes  881,431.81 bytes/sec,success
-2025-07-02 00:34:15,copy,/storage/emulated/0/DCIM//Camera/total size is 9,968,248,261  speedup is 1,077.06,/mnt/i/FraMobil//Camera/total size is 9,968,248,261  speedup is 1,077.06,success

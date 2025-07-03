@@ -1,4 +1,32 @@
+# Personal configuration files (contain private data)
+import_config.conf
 sync_config.conf
-imported_files.log
-sync_log.txt   
+
+# Log files (contain personal data and timestamps)
+*.log
+sync_log*.txt
+device_sync_log*.csv
+delete_imported_summary*.txt
+
+# Hash databases (contain file fingerprints)
+device_imported_hashes.txt
+*_hashes.txt
+kopiert_files.txt
+
+# Temporary files created during script execution
+*_hashes_only.txt
+already_imported_hashes.txt
+src_hashes_only.txt
+files_to_delete.txt
+kopiert_hashes*.txt
+
+# Backup files
+*.backup
+*.bak
+
+# Old script versions
 sync_android_photos(*).sh
+
+# OS generated files
+.DS_Store
+Thumbs.db

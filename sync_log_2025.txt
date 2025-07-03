@@ -64,3 +64,59 @@
   Oldest file: -
   Newest file: -
   No files to copy or move for Camera. Nothing to do.
+
+[2025-07-02 12:52:19] Processing subfolder: PlantNet
+  Selection rule: 
+  Action: copy from /storage/emulated/0/DCIM//PlantNet to /mnt/i/FraMobil//PlantNet
+  Number of files: 0
+  Oldest file: -
+  Newest file: -
+  No files to copy or move for PlantNet. Nothing to do.
+
+[2025-07-02 16:42:23] Processing subfolder: Camera
+  Selection rule: 
+  Action: copy from /storage/emulated/0/DCIM//Camera to /mnt/i/FraMobil//Camera
+  Number of files: 1073
+  Oldest file: 2024-01-01 02:09:07
+  Newest file: 2025-07-02 13:20:25
+  Sync complete for Camera.
+
+[2025-07-02 16:52:24] Processing subfolder: OpenCamera
+  Selection rule: all
+  Action: copy from /storage/emulated/0/DCIM//OpenCamera to /mnt/i/FraMobil//OpenCamera
+  Number of files: 0
+  Oldest file: -
+  Newest file: -
+  No files to copy or move for OpenCamera. Nothing to do.
+
+[2025-07-02 16:52:45] Processing subfolder: ScreenRecorder
+  Selection rule: all
+  Action: copy from /storage/emulated/0/DCIM//ScreenRecorder to /mnt/i/FraMobil//ScreenRecorder
+  Number of files: 0
+  Oldest file: -
+  Newest file: -
+  No files to copy or move for ScreenRecorder. Nothing to do.
+
+[2025-07-03 23:00:09] Processing subfolder: OpenCamera
+  Selection rule: 
+  Action: copy from /storage/emulated/0/DCIM//OpenCamera to /mnt/i/FraMobil//OpenCamera
+
+[2025-07-03 23:03:50] Processing subfolder: OpenCamera
+  Selection rule: 
+  Action: copy from /storage/emulated/0/DCIM//OpenCamera to /mnt/i/FraMobil//OpenCamera
+
+[2025-07-03 23:04:16] Processing subfolder: OpenCamera
+  Selection rule: 
+  Action: copy from /storage/emulated/0/DCIM//OpenCamera to /mnt/i/FraMobil//OpenCamera
+
+[2025-07-03 23:05:49] Processing subfolder: OpenCamera
+  Selection rule: 
+  Action: copy from /storage/emulated/0/DCIM//OpenCamera to /mnt/i/FraMobil//OpenCamera
+
+[2025-07-03 23:09:26] Processing subfolder: Camera
+  Selection rule: 
+  Action: copy from /storage/emulated/0/DCIM//Camera to /mnt/i/FraMobil//Camera
+  Number of files: 1
+  Oldest file: 2025-06-04 08:23:42
+  Newest file: 2025-07-02 13:20:25
+  Sync complete for Camera.

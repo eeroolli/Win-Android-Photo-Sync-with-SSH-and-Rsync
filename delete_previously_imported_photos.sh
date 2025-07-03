@@ -6,6 +6,11 @@
 #   Imported photos are identified by matching file content (SHA1 hash) with files in /mnt/i/kopiert/Imported on ... (and subfolders),
 #   regardless of filename or folder structure. This prevents accidental deletion of unimported photos, even if filenames have changed.
 #
+# IMPORTANT LOG FILES:
+#   📋 delete_imported_summary_YYYY.txt - MAIN LOG: Human-readable summary of all deletion operations (most important for users)
+#   🔐 device_imported_hashes.txt - SHA1 hash database created by import_from_device_to_comp.sh (required for safe deletion)
+#   📊 Temporary hash files - Created during operation, automatically cleaned up
+#
 # Logic & Workflow:
 # 1. Present a menu to select one or more source folders to process.
 # 2. Recursively scan each selected source folder and /mnt/i/kopiert/Imported on ... for all files.
@@ -25,7 +30,7 @@
 #
 
 set -e
-trap 'echo -e "\033[0;31m❌ An error occurred. Exiting.\033[0m"' ERR
+trap 'echo -e "\033[0;31mAn error occurred. Exiting.\033[0m"' ERR
 
 # Colors
 RED='\033[0;31m'
@@ -41,6 +46,14 @@ CANDIDATE_FOLDERS=("/mnt/i/FraMobil" "/mnt/i/FraKamera")
 # Imported to Lightroom folder
 KOPIERT="/mnt/i/kopiert"
 KOPIERT_HASHES="kopiert_hashes.txt"
+
+# Use device_imported_hashes.txt as the source of truth
+HASH_LOG="device_imported_hashes.txt"
+if [ ! -f "$HASH_LOG" ]; then
+  echo -e "${RED}Hash log $HASH_LOG not found! Cannot safely delete files.${NC}"
+  exit 1
+fi
+awk '{print $1}' "$HASH_LOG" | sort > device_imported_hashes_only.txt
 
 # Interactive folder selection
 echo -e "${WHITE}Available source folders:${NC}"
@@ -195,4 +208,13 @@ for SRCFOLDER in "${SELECTED_FOLDERS[@]}"; do
   done < files_to_delete.txt
   echo -e "${GREEN}Deletion complete. $TO_DELETE files deleted from $SRCFOLDER.${NC}"
   echo "  Deletion complete. $TO_DELETE files deleted from $SRCFOLDER." >> "$SUMMARY_LOG"
-done 
+done
+
+# Clean up temp files
+rm -f *_hashes_only.txt already_imported_hashes.txt src_hashes_only.txt FraMobil__hashes.txt files_to_delete.txt 
+
+# After building FILE_LIST and FILE_COUNT
+if [[ $FILE_COUNT -eq 0 ]]; then
+  echo -e "${YELLOW}No files found in $SUBF matching your criteria. Nothing to do.${NC}"
+  continue
+fi 

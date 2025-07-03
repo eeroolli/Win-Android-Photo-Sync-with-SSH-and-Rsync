@@ -5,6 +5,12 @@
 #   Import photos and videos from your device (phone/camera) to your computer, avoiding re-import of files already copied previously.
 #   Uses imported_device_files.log to track all files that have been imported from the device, and device_sync_log_YYYY.csv to log all actions.
 #
+# IMPORTANT LOG FILES:
+#   sync_log_YYYY.txt - MAIN LOG: Human-readable summary of all operations (most important for users)
+#   device_sync_log_YYYY.csv - Detailed CSV log of each file copied/moved (for analysis)
+#   imported_device_files.log - Database of all files imported from device (for filtering)
+#   device_imported_hashes.txt - SHA1 hash database for deduplication and safe deletion
+#
 # Logic & Workflow:
 # 1. Loads configuration (connection, folders, exclusions, import log, etc.).
 # 2. Lists subfolders on the phone (excluding those in config) and lets you select which to process.
@@ -34,13 +40,13 @@ NC='\033[0m'
 
 # resolve script directory for config and logs
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-CONFIG_FILE="$SCRIPT_DIR/sync_config.conf"
+CONFIG_FILE="$SCRIPT_DIR/import_config.conf"
 LOG_FILE="$SCRIPT_DIR/sync_log.txt"
 
-echo -e "${YELLOW}🔧 Loading configuration from $CONFIG_FILE ...${NC}"
+echo -e "${YELLOW}Loading configuration from $CONFIG_FILE ...${NC}"
 # Load config
 if [ ! -f "$CONFIG_FILE" ]; then
-  echo -e "${RED}❌ Config file $CONFIG_FILE not found!${NC}"
+  echo -e "${RED}Config file $CONFIG_FILE not found!${NC}"
   exit 1
 fi
 source "$CONFIG_FILE"
@@ -76,7 +82,7 @@ select folder in $SUBFOLDERS "All"; do
   fi
 done
 
-echo -e "${GREEN}Selected folder(s): $(join_by ', ' "${SELECTED_FOLDERS[@]}")${NC}"
+echo -e "${GREEN}Selected folder(s): $(join_by ', ' "${SELECTED_FOLDERS[@]}")${NC}\n"
 
 # Set up log files with year-based rotation
 YEAR=$(date +%Y)
@@ -89,6 +95,33 @@ if [ ! -f "$FILE_LOG" ]; then
   echo "datetime,action,src_path,dest_path,status" > "$FILE_LOG"
 fi
 
+# Test SSH connection before proceeding
+ssh -i "$SSH_KEY" -p "$PHONE_PORT" -o ConnectTimeout=5 "$PHONE_USER@$PHONE_IP" 'echo OK' >/dev/null 2>&1
+if [ $? -ne 0 ]; then
+  echo -e "${RED}Could not connect to device via SSH!${NC}"
+  echo -e "${YELLOW}Please check that Termux is running on your mobile, and that the SSH server is started (sshd).${NC}"
+  echo -e "${YELLOW}You can usually start it by opening Termux and running: 'sshd'${NC}"
+  exit 1
+fi
+
+# Helper: get mtime for a file on the device
+get_device_file_mtime() {
+  ssh -i "$SSH_KEY" -p "$PHONE_PORT" "$PHONE_USER@$PHONE_IP" "stat -c '%Y' '$1'" 2>/dev/null
+}
+
+# Load imported files (filename + mtime) into an associative array for fast lookup
+declare -A imported
+if [ -f "$IMPORT_LOG_FILE" ]; then
+  while read -r line; do
+    # Format: /mnt/i/FraMobil/Camera/filename.jpg|mtime
+    basepath="${line%%|*}"
+    mtime="${line##*|}"
+    relpath="${basepath#/mnt/i/FraMobil/}"
+    relpath="${relpath#/mnt/i/FraKamera/}"
+    imported["$relpath|$mtime"]=1
+  done < "$IMPORT_LOG_FILE"
+fi
+
 # For each selected subfolder, prompt for options
 for SUBF in "${SELECTED_FOLDERS[@]}"; do
   # --- Write summary header ---
@@ -98,7 +131,6 @@ for SUBF in "${SELECTED_FOLDERS[@]}"; do
   echo "  Selection rule: $FILE_FILTER" >> "$SUMMARY_LOG"
   echo "  Action: $ACTION from $REMOTE_DIR/$SUBF to $LOCAL_DIR/$SUBF" >> "$SUMMARY_LOG"
 
-  echo -e "\n${WHITE}--- Processing subfolder: $SUBF ---${NC}"
   # Prompt for copy or move
   echo -ne "${YELLOW}Do you want to copy or move files from $SUBF? (c/m) [c]: ${NC}"
   read cmode
@@ -124,7 +156,6 @@ for SUBF in "${SELECTED_FOLDERS[@]}"; do
   LAST_SYNC_DATE=""
   if [[ "$fsel" == "2" ]]; then
     LAST_SYNC_DATE=$(awk -F, -v subf="$SUBF" 'tolower($2) ~ /copy|move/ && $3 ~ subf {print $1}' "$FILE_LOG" | sort | tail -1)
-    echo "LAST_SYNC_DATE for $SUBF is '$LAST_SYNC_DATE'"
   fi
 
   case $fsel in
@@ -180,21 +211,22 @@ for SUBF in "${SELECTED_FOLDERS[@]}"; do
   FILE_LIST=$(ssh -i "$SSH_KEY" -p "$PHONE_PORT" "$PHONE_USER@$PHONE_IP" "$FIND_CMD" | sort || true)
   FILE_COUNT=$(echo "$FILE_LIST" | grep -c . || true)
 
-  # --- Filter out already imported files ---
-  declare -A imported
-  if [ -f "$IMPORT_LOG_FILE" ]; then
-    while read -r line; do
-      relpath="${line#/mnt/i/FraMobil/}"
-      relpath="${relpath#/mnt/i/FraKamera/}"
-      imported["$relpath"]=1
-    done < "$IMPORT_LOG_FILE"
+  # Debug output removed for cleaner interface
+
+  if [ $? -ne 0 ]; then
+    echo -e "${RED}Error: Failed to list files on the device. Check SSH connection, permissions, and path.${NC}"
+    exit 1
   fi
+
+  # --- Filter out already imported files ---
   FILTERED_FILE_LIST=""
   while read -r phone_file; do
     relpath="${phone_file#$REMOTE_DIR/}"
-    if [[ -z "${imported[$relpath]}" ]]; then
-      FILTERED_FILE_LIST+="$phone_file"$'\n'
+    mtime=$(get_device_file_mtime "$phone_file")
+    if [[ -z "${imported[$relpath|$mtime]}" ]]; then
+      FILTERED_FILE_LIST+="$phone_file|$mtime"$'\n'
     fi
+    # else: already imported (by name+mtime)
   done <<< "$FILE_LIST"
   FILE_LIST="$FILTERED_FILE_LIST"
   FILE_COUNT=$(echo "$FILE_LIST" | grep -c . || true)
@@ -210,17 +242,33 @@ for SUBF in "${SELECTED_FOLDERS[@]}"; do
     NEWEST_DATE="-"
   fi
 
-  # --- Show summary ---
-  echo -e "${WHITE}Summary for $SUBF:${NC}"
-  echo -e "  ${GRAY}Number of files: ${WHITE}$FILE_COUNT${NC}"
-  echo -e "  ${GRAY}Oldest file: ${WHITE}$OLDEST_DATE${NC}"
-  echo -e "  ${GRAY}Newest file: ${WHITE}$NEWEST_DATE${NC}"
+  # --- Show summary in terminal (same format as log file) ---
+  NOW=$(date '+%Y-%m-%d %H:%M:%S')
+  echo -e "\n${WHITE}[$NOW] Processing subfolder: $SUBF${NC}"
+  echo -e "  ${GRAY}Selection rule: ${WHITE}$FILE_FILTER${NC}"
+  echo -e "  ${GRAY}Action: ${WHITE}$ACTION from $REMOTE_DIR/$SUBF to $LOCAL_DIR/$SUBF${NC}"
+  
+  if [[ $FILE_COUNT -gt 0 ]]; then
+    echo -e "  ${GRAY}Number of files: ${WHITE}$FILE_COUNT${NC}"
+    echo -e "  ${GRAY}Oldest file: ${WHITE}$OLDEST_DATE${NC}"
+    echo -e "  ${GRAY}Newest file: ${WHITE}$NEWEST_DATE${NC}"
+  else
+    echo -e "  ${GRAY}Number of files: ${WHITE}0${NC}"
+    echo -e "  ${GRAY}Oldest file: ${WHITE}-${NC}"
+    echo -e "  ${GRAY}Newest file: ${WHITE}-${NC}"
+  fi
+  
+  # Write to log file (same format)
+  echo "" >> "$SUMMARY_LOG"
+  echo "[$NOW] Processing subfolder: $SUBF" >> "$SUMMARY_LOG"
+  echo "  Selection rule: $FILE_FILTER" >> "$SUMMARY_LOG"
+  echo "  Action: $ACTION from $REMOTE_DIR/$SUBF to $LOCAL_DIR/$SUBF" >> "$SUMMARY_LOG"
   echo "  Number of files: $FILE_COUNT" >> "$SUMMARY_LOG"
   echo "  Oldest file: $OLDEST_DATE" >> "$SUMMARY_LOG"
   echo "  Newest file: $NEWEST_DATE" >> "$SUMMARY_LOG"
 
-   if [[ $FILE_COUNT -eq 0 ]]; then
-    echo -e "${YELLOW}No files to copy or move for $SUBF. Nothing to do.${NC}"
+  if [[ -z "$FILE_LIST" || $FILE_COUNT -eq 0 ]]; then
+    echo -e "${YELLOW}  No files to copy or move for $SUBF. Nothing to do.${NC}"
     echo "  No files to copy or move for $SUBF. Nothing to do." >> "$SUMMARY_LOG"
     continue
   fi
@@ -242,7 +290,7 @@ for SUBF in "${SELECTED_FOLDERS[@]}"; do
   echo -ne "${YELLOW}Proceed with sync for $SUBF? (y/N): ${NC}"
   read go
   if [[ ! "$go" =~ ^[Yy]$ ]]; then
-    echo -e "${RED}Skipping $SUBF${NC}"
+    echo -e "${RED}  Skipped by user.${NC}"
     echo "  Skipped by user." >> "$SUMMARY_LOG"
     continue
   fi
@@ -254,14 +302,18 @@ for SUBF in "${SELECTED_FOLDERS[@]}"; do
   [[ "$ACTION" == "copy" ]] && RSYNC_OPTS+=" --ignore-existing"
   RSYNC_CMD="rsync $RSYNC_OPTS -e \"ssh -i $SSH_KEY -p $PHONE_PORT\" $PHONE_USER@$PHONE_IP:'$REMOTE_SUBFOLDER/' '$LOCAL_SUBFOLDER/'"
   echo -e "${GREEN}Starting sync for $SUBF...${NC}"
-  # Log each file copied/moved
-  eval "$RSYNC_CMD --out-format='%n'" | while read -r relfile; do
+  # Perform sync and log files after completion
+  eval "$RSYNC_CMD --progress"
+  
+  # Log all files that were copied/moved by checking what's new in the local folder
+  find "$LOCAL_SUBFOLDER" -type f -newer "$FILE_LOG" 2>/dev/null | while read -r local_file; do
+    rel_path="${local_file#$LOCAL_SUBFOLDER/}"
     NOW=$(date '+%Y-%m-%d %H:%M:%S')
-    src="$REMOTE_SUBFOLDER/$relfile"
-    dest="$LOCAL_SUBFOLDER/$relfile"
+    src="$REMOTE_SUBFOLDER/$rel_path"
+    dest="$local_file"
     echo "$NOW,$ACTION,$src,$dest,success" >> "$FILE_LOG"
   done
-  echo -e "${GREEN}Sync complete for $SUBF.${NC}"
+  echo -e "${GREEN}  Sync complete for $SUBF.${NC}"
   echo "  Sync complete for $SUBF." >> "$SUMMARY_LOG"
 
   # --- Update import log ---
@@ -279,15 +331,41 @@ for SUBF in "${SELECTED_FOLDERS[@]}"; do
         ssh -i "$SSH_KEY" -p "$PHONE_PORT" "$PHONE_USER@$PHONE_IP" "rm -f '$del_file'" && \
         NOW=$(date '+%Y-%m-%d %H:%M:%S'); echo "$NOW,deleted,$del_file,,success" >> "$FILE_LOG"
       done
-      echo -e "${GREEN}Deleted $DELETE_COUNT files from phone in $SUBF.${NC}"
+      echo -e "${GREEN}  Deleted $DELETE_COUNT files from phone in $SUBF.${NC}"
       echo "  Deleted $DELETE_COUNT files from phone in $SUBF." >> "$SUMMARY_LOG"
     else
-      echo -e "${RED}Deletion cancelled for $SUBF.${NC}"
+      echo -e "${RED}  Deletion cancelled for $SUBF.${NC}"
       echo "  Deletion cancelled for $SUBF." >> "$SUMMARY_LOG"
     fi
   fi
 
+  # --- Perform incremental hashing for new files ---
+  # (Assume LOCAL_SUBFOLDER is set)
+  HASH_LOG="$SCRIPT_DIR/device_imported_hashes.txt"
+  if [ ! -f "$HASH_LOG" ]; then
+    touch "$HASH_LOG"
+  fi
+  find "$LOCAL_SUBFOLDER" -type f | while read -r f; do
+    # Check if file is already hashed
+    if ! grep -q " $f$" "$HASH_LOG"; then
+      sha1sum "$f" >> "$HASH_LOG"
+    fi
+    # Update import log with filename|mtime
+    mtime=$(stat -c '%Y' "$f")
+    echo "$f|$mtime" >> "$IMPORT_LOG_FILE"
+  done
+
+  if [ $? -ne 0 ]; then
+    echo -e "${RED}Error during hashing of imported files. Please check file permissions and disk space.${NC}"
+    echo "  Hashing error for $SUBF." >> "$SUMMARY_LOG"
+    continue
+  fi
+
 done
+
+# --- Clean up temp files ---
+# Remove any temporary files that might have been created during this run
+rm -f /tmp/rsync_* /tmp/ssh_* 2>/dev/null || true
 
 
 
