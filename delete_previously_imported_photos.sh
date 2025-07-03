@@ -100,32 +100,53 @@ if [[ "$dryrun_confirm" =~ ^[Yy]$ ]]; then
   echo -e "${GRAY}Dry run mode enabled. No files will actually be deleted.${NC}"
 fi
 
+# Incremental hashing function
+incremental_hash() {
+  local folder="$1"
+  local hashfile="$2"
+  local tmpfile="${hashfile}.tmp"
+  local filelistfile="${hashfile}.filelist"
+
+  # Get all files in folder
+  find "$folder" -type f | sort > "$filelistfile"
+
+  # If hashfile does not exist, hash all files
+  if [ ! -f "$hashfile" ]; then
+    cat "$filelistfile" | xargs -d '\n' -I{} sha1sum "{}" > "$hashfile"
+    return
+  fi
+
+  # Get list of already hashed files
+  awk '{print $2}' "$hashfile" | sort > "${hashfile}.hashedfiles"
+  # Find new files
+  comm -23 "$filelistfile" "${hashfile}.hashedfiles" > "${hashfile}.newfiles"
+
+  # Hash only new files and append
+  if [ -s "${hashfile}.newfiles" ]; then
+    cat "${hashfile}.newfiles" | xargs -d '\n' -I{} sha1sum "{}" >> "$hashfile"
+  fi
+
+  # Optionally, remove hashes for files that no longer exist
+  awk 'NR==FNR{f[$1]=1; next} f[$2]' "$filelistfile" "$hashfile" > "$tmpfile"
+  mv "$tmpfile" "$hashfile"
+
+  rm -f "${hashfile}.hashedfiles" "${hashfile}.newfiles" "$filelistfile"
+}
+
 # --- Step 1: Generate/cached hashes for KOPIERT ---
 echo -e "${YELLOW}Scanning $KOPIERT for files...${NC}"
-find "$KOPIERT" -type f | sort > kopiert_files.txt
-if [ ! -f "$KOPIERT_HASHES" ]; then
-  echo -e "${YELLOW}Hashing files in $KOPIERT ...${NC}"
-  cat kopiert_files.txt | xargs -d '\n' -I{} sha1sum "{}" > "$KOPIERT_HASHES"
-else
-  echo -e "${GRAY}Using cached hashes for $KOPIERT${NC}"
-fi
+incremental_hash "$KOPIERT" "$KOPIERT_HASHES"
 awk '{print $1}' "$KOPIERT_HASHES" | sort > kopiert_hashes_only.txt
 
 # --- Step 2: Process each selected source folder ---
 for SRCFOLDER in "${SELECTED_FOLDERS[@]}"; do
   SRC_HASHES="$(basename "$SRCFOLDER" | tr -c 'A-Za-z0-9' '_')_hashes.txt"
   echo -e "${YELLOW}Scanning $SRCFOLDER for files...${NC}"
-  find "$SRCFOLDER" -type f | sort > src_files.txt
-  if [ ! -f "$SRC_HASHES" ]; then
-    echo -e "${YELLOW}Hashing files in $SRCFOLDER ...${NC}"
-    cat src_files.txt | xargs -d '\n' -I{} sha1sum "{}" > "$SRC_HASHES"
-  else
-    echo -e "${GRAY}Using cached hashes for $SRCFOLDER${NC}"
-  fi
+  incremental_hash "$SRCFOLDER" "$SRC_HASHES"
   awk '{print $1}' "$SRC_HASHES" | sort > src_hashes_only.txt
   comm -12 src_hashes_only.txt kopiert_hashes_only.txt > already_imported_hashes.txt
   awk 'NR==FNR{h[$1]=1; next} h[$1]{print $2}' already_imported_hashes.txt "$SRC_HASHES" > files_to_delete.txt
-  TOTAL_FILES=$(wc -l < src_files.txt)
+  TOTAL_FILES=$(wc -l < src_hashes_only.txt)
   TO_DELETE=$(wc -l < files_to_delete.txt)
   TO_KEEP=$((TOTAL_FILES - TO_DELETE))
   NOW=$(date '+%Y-%m-%d %H:%M:%S')

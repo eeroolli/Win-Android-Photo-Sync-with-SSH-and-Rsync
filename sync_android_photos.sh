@@ -79,7 +79,7 @@ echo -e "${GREEN}Selected folder(s): $(join_by ', ' "${SELECTED_FOLDERS[@]}")${N
 YEAR=$(date +%Y)
 SUMMARY_LOG="$SCRIPT_DIR/sync_log_$YEAR.txt"
 FILE_LOG="$SCRIPT_DIR/sync_file_log_$YEAR.csv"
-IMPORT_LOG_FILE="$SCRIPT_DIR/imported_files.log"
+IMPORT_LOG_FILE="$SCRIPT_DIR/imported_device_files.log"
 
 # Write CSV header if file does not exist
 if [ ! -f "$FILE_LOG" ]; then
