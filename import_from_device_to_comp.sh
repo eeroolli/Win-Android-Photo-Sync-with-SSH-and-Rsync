@@ -1,7 +1,9 @@
 #!/bin/bash
-# File: sync_android_photos.sh
+# File: import_from_device_to_comp.sh
 #
-# Interactive script to sync/move Android photos to a local temporary folder for Lightroom import.
+# Purpose:
+#   Import photos and videos from your device (phone/camera) to your computer, avoiding re-import of files already copied previously.
+#   Uses imported_device_files.log to track all files that have been imported from the device, and device_sync_log_YYYY.csv to log all actions.
 #
 # Logic & Workflow:
 # 1. Loads configuration (connection, folders, exclusions, import log, etc.).
@@ -9,13 +11,14 @@
 # 3. For each selected subfolder:
 #    - Prompts for copy/move, file selection criteria (all, since last, after/before date), and deletion options.
 #    - Builds a file list using date filters and import log.
+#    - Filters out files already present in imported_device_files.log (by relative path).
 #    - Shows a summary (file count, oldest/newest, files to delete if chosen).
 #    - Prompts for confirmation before syncing and before deleting.
 #    - Performs sync with rsync.
 #    - Updates the import log with files that were copied/moved.
 #    - If deletion is chosen, only deletes files that are both on the phone and in the import log, after a final confirmation.
 #
-# This ensures you only delete files that have been safely imported into Lightroom, and gives you full control and feedback at every step.
+# This ensures you only import new files, never re-copy files already imported, and gives you full control and feedback at every step.
 #
 
 set -e
@@ -78,7 +81,7 @@ echo -e "${GREEN}Selected folder(s): $(join_by ', ' "${SELECTED_FOLDERS[@]}")${N
 # Set up log files with year-based rotation
 YEAR=$(date +%Y)
 SUMMARY_LOG="$SCRIPT_DIR/sync_log_$YEAR.txt"
-FILE_LOG="$SCRIPT_DIR/sync_file_log_$YEAR.csv"
+FILE_LOG="$SCRIPT_DIR/device_sync_log_$YEAR.csv"
 IMPORT_LOG_FILE="$SCRIPT_DIR/imported_device_files.log"
 
 # Write CSV header if file does not exist
@@ -174,9 +177,26 @@ for SUBF in "${SELECTED_FOLDERS[@]}"; do
       FIND_CMD+=" -newermt '$EXCLUDE_BEFORE_DATE'"
     fi
   fi
-  # echo "DEBUG: FIND_CMD is $FIND_CMD"
-  # Get file list from phone
   FILE_LIST=$(ssh -i "$SSH_KEY" -p "$PHONE_PORT" "$PHONE_USER@$PHONE_IP" "$FIND_CMD" | sort || true)
+  FILE_COUNT=$(echo "$FILE_LIST" | grep -c . || true)
+
+  # --- Filter out already imported files ---
+  declare -A imported
+  if [ -f "$IMPORT_LOG_FILE" ]; then
+    while read -r line; do
+      relpath="${line#/mnt/i/FraMobil/}"
+      relpath="${relpath#/mnt/i/FraKamera/}"
+      imported["$relpath"]=1
+    done < "$IMPORT_LOG_FILE"
+  fi
+  FILTERED_FILE_LIST=""
+  while read -r phone_file; do
+    relpath="${phone_file#$REMOTE_DIR/}"
+    if [[ -z "${imported[$relpath]}" ]]; then
+      FILTERED_FILE_LIST+="$phone_file"$'\n'
+    fi
+  done <<< "$FILE_LIST"
+  FILE_LIST="$FILTERED_FILE_LIST"
   FILE_COUNT=$(echo "$FILE_LIST" | grep -c . || true)
 
   # Get oldest and newest file dates
