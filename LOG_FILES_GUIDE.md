@@ -5,7 +5,7 @@ This document explains all the log files created by the photo import and deletio
 ## Main Log Files (Most Important for Users)
 
 ### `sync_log_YYYY.txt`
-- **Purpose**: Human-readable summary of all import operations
+- **Purpose**: Human-readable summary of all copy operations (device to computer)
 - **Content**: High-level overview of each sync session with timestamps, file counts, and actions taken
 - **When to check**: Review after each import session to see what was processed
 - **Example**:
@@ -19,15 +19,15 @@ This document explains all the log files created by the photo import and deletio
     Sync complete for Camera.
   ```
 
-### `delete_imported_summary_YYYY.txt`
-- **Purpose**: Human-readable summary of all deletion operations
-- **Content**: Overview of files deleted from source folders after Lightroom import
+### `delete_copied_summary_YYYY.txt`
+- **Purpose**: Human-readable summary of all deletion operations (after Lightroom import)
+- **Content**: Overview of files deleted from source folders after they have been imported to Lightroom
 - **When to check**: Review after running the deletion script to see what was cleaned up
 - **Example**:
   ```
-  [2025-07-02 21:15:30] delete_previously_imported_photos.sh run for /mnt/i/FraMobil
+  [2025-07-02 21:15:30] delete_previously_copied_photos.sh run for /mnt/i/FraMobil
     Total files in /mnt/i/FraMobil: 1250
-    Files already imported (to be deleted): 45
+    Files already copied (to be deleted): 45
     Files to keep: 1205
     Deletion complete. 45 files deleted from /mnt/i/FraMobil.
   ```
@@ -35,30 +35,30 @@ This document explains all the log files created by the photo import and deletio
 ## Detailed Log Files (For Analysis)
 
 ### `device_sync_log_YYYY.csv`
-- **Purpose**: Detailed CSV log of each file copied/moved
+- **Purpose**: Detailed CSV log of each file copied/moved (device to computer)
 - **Content**: Timestamp, action, source path, destination path, status
 - **When to check**: For detailed analysis or troubleshooting specific files
 - **Format**: CSV with columns: datetime,action,src_path,dest_path,status
 
-### `imported_device_files.log`
-- **Purpose**: Database of all files imported from device
-- **Content**: Full paths and modification times of imported files
+### `copied_device_files.log`
+- **Purpose**: Database of all files copied from device (device to computer)
+- **Content**: Full paths and modification times of copied files
 - **When to check**: Used internally by scripts for filtering (don't edit manually)
 - **Format**: One file path per line with modification time
 
 ## Hash Database Files (For Deduplication)
 
-### `device_imported_hashes.txt`
-- **Purpose**: SHA1 hash database for deduplication and safe deletion
-- **Content**: SHA1 hash and file path for all imported files
+### `device_copied_hashes.txt`
+- **Purpose**: SHA1 hash database for deduplication and safe deletion (device to computer)
+- **Content**: SHA1 hash and file path for all copied files
 - **When to check**: Used by deletion script to safely identify duplicate files
 - **Format**: SHA1 hash followed by file path
 
 ## Other Files
 
-### `kopiert_files.txt`
+### `imported_to_lightroom_files.txt`
 - **Purpose**: List of files in the Lightroom import folder
-- **Content**: All files in /mnt/i/kopiert/Imported on... folders
+- **Content**: All files in /mnt/i/imported_to_lightroom/Imported on... folders
 - **When to check**: Used by deletion script to identify imported files
 
 ## Temporary Files
@@ -69,6 +69,7 @@ The scripts create temporary hash files during operation (e.g., `*_hashes_only.t
 
 All log files are stored in the same directory as the scripts:
 - `/mnt/f/prog/sshphone/` (or wherever you cloned the repository)
+- Lightroom import folder: `/mnt/i/imported_to_lightroom/`
 
 ## Year-based Rotation
 

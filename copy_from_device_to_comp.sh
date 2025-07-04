@@ -1,15 +1,15 @@
 #!/bin/bash
-# File: import_from_device_to_comp.sh
+# File: copy_from_device_to_comp.sh
 #
 # Purpose:
-#   Import photos and videos from your device (phone/camera) to your computer, avoiding re-import of files already copied previously.
-#   Uses imported_device_files.log to track all files that have been imported from the device, and device_sync_log_YYYY.csv to log all actions.
+#   Copy photos and videos from your device (phone/camera) to your computer, avoiding re-copy of files already copied previously.
+#   Uses copied_device_files.log to track all files that have been copied from the device, and device_sync_log_YYYY.csv to log all actions.
 #
 # IMPORTANT LOG FILES:
 #   sync_log_YYYY.txt - MAIN LOG: Human-readable summary of all operations (most important for users)
 #   device_sync_log_YYYY.csv - Detailed CSV log of each file copied/moved (for analysis)
-#   imported_device_files.log - Database of all files imported from device (for filtering)
-#   device_imported_hashes.txt - SHA1 hash database for deduplication and safe deletion
+#   copied_device_files.log - Database of all files copied from device (for filtering)
+#   device_copied_hashes.txt - SHA1 hash database for deduplication and safe deletion
 #
 # Logic & Workflow:
 # 1. Loads configuration (connection, folders, exclusions, import log, etc.).
@@ -17,7 +17,7 @@
 # 3. For each selected subfolder:
 #    - Prompts for copy/move, file selection criteria (all, since last, after/before date), and deletion options.
 #    - Builds a file list using date filters and import log.
-#    - Filters out files already present in imported_device_files.log (by relative path).
+#    - Filters out files already present in copied_device_files.log (by relative path).
 #    - Shows a summary (file count, oldest/newest, files to delete if chosen).
 #    - Prompts for confirmation before syncing and before deleting.
 #    - Performs sync with rsync.
@@ -40,7 +40,7 @@ NC='\033[0m'
 
 # resolve script directory for config and logs
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-CONFIG_FILE="$SCRIPT_DIR/import_config.conf"
+CONFIG_FILE="$SCRIPT_DIR/copy_config.conf"
 LOG_FILE="$SCRIPT_DIR/sync_log.txt"
 
 echo -e "${YELLOW}Loading configuration from $CONFIG_FILE ...${NC}"
@@ -88,7 +88,7 @@ echo -e "${GREEN}Selected folder(s): $(join_by ', ' "${SELECTED_FOLDERS[@]}")${N
 YEAR=$(date +%Y)
 SUMMARY_LOG="$SCRIPT_DIR/sync_log_$YEAR.txt"
 FILE_LOG="$SCRIPT_DIR/device_sync_log_$YEAR.csv"
-IMPORT_LOG_FILE="$SCRIPT_DIR/imported_device_files.log"
+COPY_LOG_FILE="$SCRIPT_DIR/copied_device_files.log"
 
 # Write CSV header if file does not exist
 if [ ! -f "$FILE_LOG" ]; then
@@ -109,17 +109,17 @@ get_device_file_mtime() {
   ssh -i "$SSH_KEY" -p "$PHONE_PORT" "$PHONE_USER@$PHONE_IP" "stat -c '%Y' '$1'" 2>/dev/null
 }
 
-# Load imported files (filename + mtime) into an associative array for fast lookup
-declare -A imported
-if [ -f "$IMPORT_LOG_FILE" ]; then
+# Load copied files (filename + mtime) into an associative array for fast lookup
+declare -A copied
+if [ -f "$COPY_LOG_FILE" ]; then
   while read -r line; do
     # Format: /mnt/i/FraMobil/Camera/filename.jpg|mtime
     basepath="${line%%|*}"
     mtime="${line##*|}"
     relpath="${basepath#/mnt/i/FraMobil/}"
     relpath="${relpath#/mnt/i/FraKamera/}"
-    imported["$relpath|$mtime"]=1
-  done < "$IMPORT_LOG_FILE"
+    copied["$relpath|$mtime"]=1
+  done < "$COPY_LOG_FILE"
 fi
 
 # For each selected subfolder, prompt for options
@@ -178,9 +178,9 @@ for SUBF in "${SELECTED_FOLDERS[@]}"; do
   esac
 
   # Prompt for deletion
-  echo -ne "${YELLOW}Delete files on phone that have been imported? (y/N): ${NC}"
+  echo -ne "${YELLOW}Delete files on phone that have been copied? (y/N): ${NC}"
   read delopt
-  [[ "$delopt" =~ ^[Yy]$ ]] && DELETE_IMPORTED=1 || DELETE_IMPORTED=0
+  [[ "$delopt" =~ ^[Yy]$ ]] && DELETE_COPIED=1 || DELETE_COPIED=0
 
   # --- Build file list on phone ---
   REMOTE_SUBFOLDER="$REMOTE_DIR/$SUBF"
@@ -218,15 +218,15 @@ for SUBF in "${SELECTED_FOLDERS[@]}"; do
     exit 1
   fi
 
-  # --- Filter out already imported files ---
+  # --- Filter out already copied files ---
   FILTERED_FILE_LIST=""
   while read -r phone_file; do
     relpath="${phone_file#$REMOTE_DIR/}"
     mtime=$(get_device_file_mtime "$phone_file")
-    if [[ -z "${imported[$relpath|$mtime]}" ]]; then
+    if [[ -z "${copied[$relpath|$mtime]}" ]]; then
       FILTERED_FILE_LIST+="$phone_file|$mtime"$'\n'
     fi
-    # else: already imported (by name+mtime)
+    # else: already copied (by name+mtime)
   done <<< "$FILE_LIST"
   FILE_LIST="$FILTERED_FILE_LIST"
   FILE_COUNT=$(echo "$FILE_LIST" | grep -c . || true)
@@ -274,10 +274,10 @@ for SUBF in "${SELECTED_FOLDERS[@]}"; do
   fi
 
   # --- Deletion preview ---
-  if [[ $DELETE_IMPORTED -eq 1 && $FILE_COUNT -gt 0 ]]; then
-    # Only delete files that are in the import log
-    if [ -f "$IMPORT_LOG_FILE" ]; then
-      FILES_TO_DELETE=$(comm -12 <(echo "$FILE_LIST" | sort || true) <(awk '{print $1}' "$IMPORT_LOG_FILE" | sort || true) || true)
+  if [[ $DELETE_COPIED -eq 1 && $FILE_COUNT -gt 0 ]]; then
+    # Only delete files that are in the copy log
+    if [ -f "$COPY_LOG_FILE" ]; then
+      FILES_TO_DELETE=$(comm -12 <(echo "$FILE_LIST" | sort || true) <(awk '{print $1}' "$COPY_LOG_FILE" | sort || true) || true)
       DELETE_COUNT=$(echo "$FILES_TO_DELETE" | grep -c . || true)
     else
       DELETE_COUNT=0
@@ -316,14 +316,14 @@ for SUBF in "${SELECTED_FOLDERS[@]}"; do
   echo -e "${GREEN}  Sync complete for $SUBF.${NC}"
   echo "  Sync complete for $SUBF." >> "$SUMMARY_LOG"
 
-  # --- Update import log ---
+  # --- Update copy log ---
   # Log all files now present in local subfolder
   find "$LOCAL_SUBFOLDER" -type f | while read -r f; do
-    echo "$f" >> "$IMPORT_LOG_FILE"
+    echo "$f" >> "$COPY_LOG_FILE"
   done
 
   # --- Deletion step ---
-  if [[ $DELETE_IMPORTED -eq 1 && $DELETE_COUNT -gt 0 ]]; then
+  if [[ $DELETE_COPIED -eq 1 && $DELETE_COUNT -gt 0 ]]; then
     echo -ne "${YELLOW}About to delete $DELETE_COUNT files from phone in $SUBF. Continue? (y/N): ${NC}"
     read del_confirm
     if [[ "$del_confirm" =~ ^[Yy]$ ]]; then
@@ -341,7 +341,7 @@ for SUBF in "${SELECTED_FOLDERS[@]}"; do
 
   # --- Perform incremental hashing for new files ---
   # (Assume LOCAL_SUBFOLDER is set)
-  HASH_LOG="$SCRIPT_DIR/device_imported_hashes.txt"
+  HASH_LOG="$SCRIPT_DIR/device_copied_hashes.txt"
   if [ ! -f "$HASH_LOG" ]; then
     touch "$HASH_LOG"
   fi
@@ -350,13 +350,13 @@ for SUBF in "${SELECTED_FOLDERS[@]}"; do
     if ! grep -q " $f$" "$HASH_LOG"; then
       sha1sum "$f" >> "$HASH_LOG"
     fi
-    # Update import log with filename|mtime
+    # Update copy log with filename|mtime
     mtime=$(stat -c '%Y' "$f")
-    echo "$f|$mtime" >> "$IMPORT_LOG_FILE"
+    echo "$f|$mtime" >> "$COPY_LOG_FILE"
   done
 
   if [ $? -ne 0 ]; then
-    echo -e "${RED}Error during hashing of imported files. Please check file permissions and disk space.${NC}"
+    echo -e "${RED}Error during hashing of copied files. Please check file permissions and disk space.${NC}"
     echo "  Hashing error for $SUBF." >> "$SUMMARY_LOG"
     continue
   fi

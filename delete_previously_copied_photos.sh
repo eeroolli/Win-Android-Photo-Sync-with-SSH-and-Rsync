@@ -1,21 +1,21 @@
 #!/bin/bash
-# File: delete_previously_imported_photos.sh
+# File: delete_previously_copied_photos.sh
 #
 # Purpose:
 #   Safely delete photos from one or more source folders (e.g., /mnt/i/FraMobil, /mnt/i/FraKamera) that have already been imported to Lightroom.
-#   Imported photos are identified by matching file content (SHA1 hash) with files in /mnt/i/kopiert/Imported on ... (and subfolders),
-#   regardless of filename or folder structure. This prevents accidental deletion of unimported photos, even if filenames have changed.
+#   Imported photos are identified by matching file content (SHA1 hash) with files in /mnt/i/imported_to_lightroom/Imported on ... (and subfolders),
+#   regardless of filename or folder structure. This prevents accidental deletion of uncopied photos, even if filenames have changed.
 #
 # IMPORTANT LOG FILES:
-#   📋 delete_imported_summary_YYYY.txt - MAIN LOG: Human-readable summary of all deletion operations (most important for users)
-#   🔐 device_imported_hashes.txt - SHA1 hash database created by import_from_device_to_comp.sh (required for safe deletion)
-#   📊 Temporary hash files - Created during operation, automatically cleaned up
+#   delete_copied_summary_YYYY.txt - MAIN LOG: Human-readable summary of all deletion operations (most important for users)
+#   device_copied_hashes.txt - SHA1 hash database created by copy_from_device_to_comp.sh (required for safe deletion)
+#   Temporary hash files - Created during operation, automatically cleaned up
 #
 # Logic & Workflow:
 # 1. Present a menu to select one or more source folders to process.
-# 2. Recursively scan each selected source folder and /mnt/i/kopiert/Imported on ... for all files.
+# 2. Recursively scan each selected source folder and /mnt/i/imported_to_lightroom/Imported on ... for all files.
 # 3. Compute SHA1 hashes for all files, caching results to avoid redundant hashing.
-# 4. Identify files in each source folder whose hashes match any file in /mnt/i/kopiert/Imported on ...
+# 4. Identify files in each source folder whose hashes match any file in /mnt/i/imported_to_lightroom/Imported on ...
 # 5. Show a summary for each folder: total files scanned, number of matches (to be deleted), and number of files to keep.
 # 6. Prompt for confirmation before deleting any files from each folder.
 # 7. Delete only the files that are confirmed as already imported.
@@ -26,7 +26,7 @@
 # Requirements: bash, find, sha1sum, sort, awk, grep, comm
 #
 # Usage:
-#   bash delete_previously_imported_photos.sh
+#   bash delete_previously_copied_photos.sh
 #
 
 set -e
@@ -44,16 +44,16 @@ NC='\033[0m'
 CANDIDATE_FOLDERS=("/mnt/i/FraMobil" "/mnt/i/FraKamera")
 
 # Imported to Lightroom folder
-KOPIERT="/mnt/i/kopiert"
-KOPIERT_HASHES="kopiert_hashes.txt"
+IMPORTED_TO_LR="/mnt/i/imported_to_lightroom"
+IMPORTED_TO_LR_HASHES="imported_to_lightroom_hashes.txt"
 
-# Use device_imported_hashes.txt as the source of truth
-HASH_LOG="device_imported_hashes.txt"
+# Use device_copied_hashes.txt as the source of truth
+HASH_LOG="device_copied_hashes.txt"
 if [ ! -f "$HASH_LOG" ]; then
   echo -e "${RED}Hash log $HASH_LOG not found! Cannot safely delete files.${NC}"
   exit 1
 fi
-awk '{print $1}' "$HASH_LOG" | sort > device_imported_hashes_only.txt
+awk '{print $1}' "$HASH_LOG" | sort > device_copied_hashes_only.txt
 
 # Interactive folder selection
 echo -e "${WHITE}Available source folders:${NC}"
@@ -102,7 +102,7 @@ echo -e "${GREEN}Selected folder(s): $(IFS=, ; echo "${SELECTED_FOLDERS[*]}")${N
 
 # Summary log
 YEAR=$(date +%Y)
-SUMMARY_LOG="delete_imported_summary_$YEAR.txt"
+SUMMARY_LOG="delete_copied_summary_$YEAR.txt"
 
 # Ask for dry run mode
 DRY_RUN=0
@@ -146,10 +146,10 @@ incremental_hash() {
   rm -f "${hashfile}.hashedfiles" "${hashfile}.newfiles" "$filelistfile"
 }
 
-# --- Step 1: Generate/cached hashes for KOPIERT ---
-echo -e "${YELLOW}Scanning $KOPIERT for files...${NC}"
-incremental_hash "$KOPIERT" "$KOPIERT_HASHES"
-awk '{print $1}' "$KOPIERT_HASHES" | sort > kopiert_hashes_only.txt
+# --- Step 1: Generate/cached hashes for IMPORTED_TO_LR ---
+echo -e "${YELLOW}Scanning $IMPORTED_TO_LR for files...${NC}"
+incremental_hash "$IMPORTED_TO_LR" "$IMPORTED_TO_LR_HASHES"
+awk '{print $1}' "$IMPORTED_TO_LR_HASHES" | sort > imported_to_lightroom_hashes_only.txt
 
 # --- Step 2: Process each selected source folder ---
 for SRCFOLDER in "${SELECTED_FOLDERS[@]}"; do
@@ -157,14 +157,14 @@ for SRCFOLDER in "${SELECTED_FOLDERS[@]}"; do
   echo -e "${YELLOW}Scanning $SRCFOLDER for files...${NC}"
   incremental_hash "$SRCFOLDER" "$SRC_HASHES"
   awk '{print $1}' "$SRC_HASHES" | sort > src_hashes_only.txt
-  comm -12 src_hashes_only.txt kopiert_hashes_only.txt > already_imported_hashes.txt
+  comm -12 src_hashes_only.txt imported_to_lightroom_hashes_only.txt > already_imported_hashes.txt
   awk 'NR==FNR{h[$1]=1; next} h[$1]{print $2}' already_imported_hashes.txt "$SRC_HASHES" > files_to_delete.txt
   TOTAL_FILES=$(wc -l < src_hashes_only.txt)
   TO_DELETE=$(wc -l < files_to_delete.txt)
   TO_KEEP=$((TOTAL_FILES - TO_DELETE))
   NOW=$(date '+%Y-%m-%d %H:%M:%S')
   echo "" >> "$SUMMARY_LOG"
-  echo "[$NOW] delete_previously_imported_photos.sh run for $SRCFOLDER" >> "$SUMMARY_LOG"
+  echo "[$NOW] delete_previously_copied_photos.sh run for $SRCFOLDER" >> "$SUMMARY_LOG"
   echo "  Total files in $SRCFOLDER: $TOTAL_FILES" | tee -a "$SUMMARY_LOG"
   echo "  Files already imported (to be deleted): $TO_DELETE" | tee -a "$SUMMARY_LOG"
   echo "  Files to keep: $TO_KEEP" | tee -a "$SUMMARY_LOG"

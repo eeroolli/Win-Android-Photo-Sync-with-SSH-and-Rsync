@@ -2,15 +2,15 @@
 
 ## Purpose
 
-This repository provides an interactive Bash script to safely sync or move photos from an Android phone (via SSH) to a local folder on your computer.  
-It is designed for workflows where the local folder is a temporary staging area (e.g., for importing into Lightroom), and includes robust options for filtering, logging, and safe deletion of files on the phone only after they have been imported.
+This repository provides an interactive Bash script to safely copy or move photos from an Android phone (via SSH) to a local folder on your computer.  
+It is designed for workflows where the local folder is a temporary staging area (e.g., for importing into Lightroom), and includes robust options for filtering, logging, and safe deletion of files on the phone only after they have been copied.
 
 ## Features
 
 - Interactive selection of photo subfolders (e.g., Camera, Screenshots, etc.)
 - Filter files by date, since last copy, or all
 - Option to copy or move files
-- Optionally delete files from the phone only after they have been imported
+- Optionally delete files from the phone only after they have been copied
 - Configurable exclusions and logging
 - Colorful, user-friendly prompts
 
@@ -35,9 +35,9 @@ It is designed for workflows where the local folder is a temporary staging area 
 
 1. Copy the example config:
    ```sh
-   cp import_config.example.conf import_config.conf
+   cp copy_config.example.conf copy_config.conf
    ```
-2. Edit `import_config.conf` with your own phone, SSH, and folder details.
+2. Edit `copy_config.conf` with your own phone, SSH, and folder details.
 3. Install Termux on your phone.
 4. In termux run
    ```
@@ -59,7 +59,7 @@ ssh -p 8022 u0_592@the-ipnumber-of-your-phone
 ssh-keygen -t ed25519
 ssh-copy-id -p u0_592@the-ipnumber-of-your-phone
 ~~~
-7. The following script will create a .bashrc on your phone, so that you do not need to start termux-wake-lock and sshd everytime. Edit it (note same info as in the import_config file.) Run it from WSL:
+7. The following script will create a .bashrc on your phone, so that you do not need to start termux-wake-lock and sshd everytime. Edit it (note same info as in the copy_config file.) Run it from WSL:
 ~~~
 ssh -i /path/to/your/private_key -p 8022 your_termux_user@your_phone_ip 'cat > ~/.bashrc' <<'EOF'
 # ~/.bashrc for Termux
@@ -75,4 +75,4 @@ EOF
 
 ## Use
 1. Start Termux on your phone. It automatically now runs the ssh deamon listeing for ssh connections.
-2. Start a WSL terminal on your computer and run the import_from_device_to_comp.sh
+2. Start a WSL terminal on your computer and run the copy_from_device_to_comp.sh
