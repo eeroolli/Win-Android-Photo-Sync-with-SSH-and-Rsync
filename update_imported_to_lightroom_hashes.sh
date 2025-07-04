@@ -4,9 +4,19 @@
 
 set -e
 
-IMPORT_DIR="/mnt/i/imported_to_lightroom"
-CSV_FILE="imported_to_lightroom_hashes.csv"
-COPY_LOG="copied_device_files.log"
+# Source config
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CONFIG_FILE="$SCRIPT_DIR/config.conf"
+if [ ! -f "$CONFIG_FILE" ]; then
+  echo "Config file $CONFIG_FILE not found!"
+  exit 1
+fi
+source "$CONFIG_FILE"
+
+# Use config values for paths
+IMPORT_DIR="$IMPORTED_TO_LR"
+CSV_FILE="$LIGHTROOM_HASH_CSV"
+COPY_LOG="$DEVICE_HASH_LOG"
 
 # Incremental hashing function for CSV-only workflow
 incremental_hash_csv() {
