@@ -34,13 +34,14 @@ incremental_hash_csv() {
   declare -A path_to_hash
   declare -A hash_to_row
   if [ -f "$csvfile" ]; then
-    tail -n +2 "$csvfile" | while IFS=, read -r hash path orig imported_date; do
+    # Read the CSV without using a pipe, so arrays are available in the parent shell
+    while IFS=, read -r hash path orig imported_date; do
       # Remove quotes from path
       path=${path%"}
       path=${path#"}
       path_to_hash["$path"]="$hash"
       hash_to_row["$hash"]="$hash,$path,$orig,$imported_date"
-    done
+    done < <(tail -n +2 "$csvfile")
   fi
 
   echo "sha1sum,absolute_path,original_filename,imported_date" > "$tmpfile"
@@ -58,7 +59,9 @@ incremental_hash_csv() {
     if [[ "$f" =~ Imported\ on\ ([0-9]{4}-[0-9]{2}-[0-9]{2}) ]]; then
       imported_date="${BASH_REMATCH[1]}"
     fi
-    echo "$hash,\"$f\",${orig:-unknown},$imported_date" >> "$tmpfile"
+    safe_f="${f//\"/\"\"}"  # Escape any double quotes in the filename for CSV
+    echo "DEBUG: $hash,\"$safe_f\",${orig:-unknown},$imported_date"
+    echo "$hash,\"$safe_f\",${orig:-unknown},$imported_date" >> "$tmpfile"
   done < "$filelistfile"
 
   mv "$tmpfile" "$csvfile"
