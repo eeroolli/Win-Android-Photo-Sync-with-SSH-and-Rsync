@@ -40,10 +40,11 @@ incremental_hash_csv() {
     done < <(tail -n +2 "$csvfile" | csvtool col 1,2,3,4 -)
   fi
 
-  echo "sha1sum,absolute_path,original_filename,imported_date" > "$tmpfile"
+  echo "sha1sum,absolute_path,original_filename,created_date,imported_date" > "$tmpfile"
+
+  declare -A folder_import_date
 
   while IFS= read -r f; do
-    # If file already in CSV and unchanged, reuse row
     hash=""
     orig=""
     if [[ -n "${path_to_hash[$f]}" ]]; then
@@ -53,12 +54,25 @@ incremental_hash_csv() {
       hash=$(sha1sum "$f" | awk '{print $1}')
       orig="${hash_to_orig[$hash]}"
     fi
-    imported_date=""
-    if [[ "$f" =~ Imported[\ _]on[\ _]([0-9]{4}-[0-9]{2}-[0-9]{2}) ]]; then
-      imported_date="${BASH_REMATCH[1]}"
+    # Get file creation date
+    created_date=$(stat -c '%W' "$f")
+    if [[ "$created_date" == "0" ]]; then
+      created_date=$(stat -c '%Y' "$f")
     fi
+    created_date_fmt=$(date -d "@$created_date" '+%Y-%m-%d %H:%M:%S')
+    # Get parent folder creation date as import date, with caching
+    parent_dir=$(dirname "$f")
+    if [[ -z "${folder_import_date[$parent_dir]}" ]]; then
+      import_date=$(stat -c '%W' "$parent_dir")
+      if [[ "$import_date" == "0" ]]; then
+        import_date=$(stat -c '%Y' "$parent_dir")
+      fi
+      import_date_fmt=$(date -d "@$import_date" '+%Y-%m-%d %H:%M:%S')
+      folder_import_date["$parent_dir"]="$import_date_fmt"
+    fi
+    import_date_fmt="${folder_import_date[$parent_dir]}"
     safe_f="${f//\"/\"\"}"
-    echo "$hash,\"$safe_f\",${orig:-$orig_field},$imported_date" >> "$tmpfile"
+    echo "$hash,\"$safe_f\",${orig:-$orig_field},$created_date_fmt,$import_date_fmt" >> "$tmpfile"
   done < "$filelistfile"
 
   mv "$tmpfile" "$csvfile"
@@ -66,5 +80,7 @@ incremental_hash_csv() {
 }
 
 echo "Incrementally hashing $IMPORT_DIR and updating $CSV_FILE ..."
+echo "Timestamp: $(date)"
 incremental_hash_csv "$IMPORT_DIR" "$CSV_FILE" "$COPY_LOG"
 echo "Done."
+echo "Timestamp: $(date)"
