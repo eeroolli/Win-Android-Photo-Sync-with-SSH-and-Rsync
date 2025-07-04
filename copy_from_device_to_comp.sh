@@ -30,6 +30,8 @@
 set -e
 trap 'echo -e "\033[0;31m❌ An error occurred. Exiting.\033[0m"' ERR
 
+
+
 # Colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -43,6 +45,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONFIG_FILE="$SCRIPT_DIR/copy_config.conf"
 LOG_FILE="$SCRIPT_DIR/sync_log.txt"
 
+
+
 echo -e "${YELLOW}Loading configuration from $CONFIG_FILE ...${NC}"
 # Load config
 if [ ! -f "$CONFIG_FILE" ]; then
@@ -50,6 +54,17 @@ if [ ! -f "$CONFIG_FILE" ]; then
   exit 1
 fi
 source "$CONFIG_FILE"
+
+
+# At the start of the script, update the Lightroom hash CSV and persistent hash file
+# This ensures deduplication and safe deletion always use the latest state
+UPDATE_HASH_SCRIPT="$SCRIPT_DIR/update_imported_to_lightroom_hashes.sh"
+if [ ! -x "$UPDATE_HASH_SCRIPT" ]; then
+  echo "Error: $UPDATE_HASH_SCRIPT not found or not executable!"
+  exit 1
+fi
+"$UPDATE_HASH_SCRIPT"
+
 
 # set -x
 

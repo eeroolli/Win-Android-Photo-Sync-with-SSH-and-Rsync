@@ -40,12 +40,22 @@ WHITE='\033[1;37m'
 GRAY='\033[0;37m'
 NC='\033[0m'
 
+# Update the Lightroom hash CSV before proceeding
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+UPDATE_HASH_SCRIPT="$SCRIPT_DIR/update_imported_to_lightroom_hashes.sh"
+if [ ! -x "$UPDATE_HASH_SCRIPT" ]; then
+  echo "Error: $UPDATE_HASH_SCRIPT not found or not executable!"
+  exit 1
+fi
+"$UPDATE_HASH_SCRIPT"
+
 # Candidate source folders (add more as needed)
 CANDIDATE_FOLDERS=("/mnt/i/FraMobil" "/mnt/i/FraKamera")
 
 # Imported to Lightroom folder
 IMPORTED_TO_LR="/mnt/i/imported_to_lightroom"
 IMPORTED_TO_LR_HASHES="imported_to_lightroom_hashes.txt"
+IMPORTED_TO_LR_CSV="imported_to_lightroom_hashes.csv"
 
 # Use device_copied_hashes.txt as the source of truth
 HASH_LOG="device_copied_hashes.txt"
@@ -54,6 +64,13 @@ if [ ! -f "$HASH_LOG" ]; then
   exit 1
 fi
 awk '{print $1}' "$HASH_LOG" | sort > device_copied_hashes_only.txt
+
+# Use imported_to_lightroom_hashes.csv for Lightroom import folder hashes (CSV-only workflow)
+if [ ! -f "$IMPORTED_TO_LR_CSV" ]; then
+  echo -e "${RED}CSV file $IMPORTED_TO_LR_CSV not found! Run the update script first.${NC}"
+  exit 1
+fi
+awk -F, 'NR>1 {gsub(/\"/, "", $2); print $1 > "imported_to_lightroom_hashes_only.txt"}' "$IMPORTED_TO_LR_CSV"
 
 # Interactive folder selection
 echo -e "${WHITE}Available source folders:${NC}"
@@ -113,49 +130,14 @@ if [[ "$dryrun_confirm" =~ ^[Yy]$ ]]; then
   echo -e "${GRAY}Dry run mode enabled. No files will actually be deleted.${NC}"
 fi
 
-# Incremental hashing function
-incremental_hash() {
-  local folder="$1"
-  local hashfile="$2"
-  local tmpfile="${hashfile}.tmp"
-  local filelistfile="${hashfile}.filelist"
-
-  # Get all files in folder
-  find "$folder" -type f | sort > "$filelistfile"
-
-  # If hashfile does not exist, hash all files
-  if [ ! -f "$hashfile" ]; then
-    cat "$filelistfile" | xargs -d '\n' -I{} sha1sum "{}" > "$hashfile"
-    return
-  fi
-
-  # Get list of already hashed files
-  awk '{print $2}' "$hashfile" | sort > "${hashfile}.hashedfiles"
-  # Find new files
-  comm -23 "$filelistfile" "${hashfile}.hashedfiles" > "${hashfile}.newfiles"
-
-  # Hash only new files and append
-  if [ -s "${hashfile}.newfiles" ]; then
-    cat "${hashfile}.newfiles" | xargs -d '\n' -I{} sha1sum "{}" >> "$hashfile"
-  fi
-
-  # Optionally, remove hashes for files that no longer exist
-  awk 'NR==FNR{f[$1]=1; next} f[$2]' "$filelistfile" "$hashfile" > "$tmpfile"
-  mv "$tmpfile" "$hashfile"
-
-  rm -f "${hashfile}.hashedfiles" "${hashfile}.newfiles" "$filelistfile"
-}
-
 # --- Step 1: Generate/cached hashes for IMPORTED_TO_LR ---
-echo -e "${YELLOW}Scanning $IMPORTED_TO_LR for files...${NC}"
-incremental_hash "$IMPORTED_TO_LR" "$IMPORTED_TO_LR_HASHES"
-awk '{print $1}' "$IMPORTED_TO_LR_HASHES" | sort > imported_to_lightroom_hashes_only.txt
+# (Removed: incremental_hash and direct hashing)
+# Now handled by update_imported_to_lightroom_hashes.sh
 
 # --- Step 2: Process each selected source folder ---
 for SRCFOLDER in "${SELECTED_FOLDERS[@]}"; do
   SRC_HASHES="$(basename "$SRCFOLDER" | tr -c 'A-Za-z0-9' '_')_hashes.txt"
   echo -e "${YELLOW}Scanning $SRCFOLDER for files...${NC}"
-  incremental_hash "$SRCFOLDER" "$SRC_HASHES"
   awk '{print $1}' "$SRC_HASHES" | sort > src_hashes_only.txt
   comm -12 src_hashes_only.txt imported_to_lightroom_hashes_only.txt > already_imported_hashes.txt
   awk 'NR==FNR{h[$1]=1; next} h[$1]{print $2}' already_imported_hashes.txt "$SRC_HASHES" > files_to_delete.txt

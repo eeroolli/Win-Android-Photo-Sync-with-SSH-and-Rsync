@@ -54,12 +54,22 @@ This document explains all the log files created by the photo import and deletio
 - **When to check**: Used by deletion script to safely identify duplicate files
 - **Format**: SHA1 hash followed by file path
 
+### `imported_to_lightroom_hashes.csv`
+- **Purpose**: Central, incremental CSV database of all files in the Lightroom import folder
+- **Content**: SHA1 hash, absolute path (quoted if needed), original filename (if available), and imported date (extracted from folder name)
+- **When to check**: Used by all scripts for deduplication, provenance, and safe deletion
+- **Format**: CSV with columns: sha1sum,absolute_path,original_filename,imported_date
+- **Notes**: Handles spaces in paths robustly; extensible for future metadata
+
+### `update_imported_to_lightroom_hashes.sh`
+- **Purpose**: Script to incrementally hash all files in `/mnt/i/imported_to_lightroom` and generate/update the above CSV
+- **When to run**: Automatically called at the start of both main scripts, or can be run manually after importing to Lightroom
+- **How it works**: Only new or changed files are hashed; CSV is updated in place; original filename is looked up from `copied_device_files.log` if available; imported date is extracted from folder name
+
 ## Other Files
 
-### `imported_to_lightroom_files.txt`
-- **Purpose**: List of files in the Lightroom import folder
-- **Content**: All files in /mnt/i/imported_to_lightroom/Imported on... folders
-- **When to check**: Used by deletion script to identify imported files
+- **Legacy/Obsolete:**
+  - `imported_to_lightroom_files.txt` (archived, no longer used; all path lists should be generated from imported_to_lightroom_hashes.csv)
 
 ## Temporary Files
 

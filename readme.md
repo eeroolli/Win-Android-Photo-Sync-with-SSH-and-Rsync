@@ -13,6 +13,7 @@ It is designed for workflows where the local folder is a temporary staging area 
 - Optionally delete files from the phone only after they have been copied
 - Configurable exclusions and logging
 - Colorful, user-friendly prompts
+- **Centralized, incremental hash database for Lightroom import folder**
 
 ## Requirements
 
@@ -73,6 +74,25 @@ esac
 EOF
 ~~~ 
 
+## Workflow Overview
+
+1. **Copy from Device to Computer**: Use `copy_from_device_to_comp.sh` to copy or move files from your phone (via SSH/Termux) to a local folder (e.g., `/mnt/i/FraMobil`).
+2. **Import to Lightroom**: Import files from the local folder into Lightroom. Lightroom may rename or move files.
+3. **Update Hash Database**: Run `update_imported_to_lightroom_hashes.sh` to incrementally hash all files in `/mnt/i/imported_to_lightroom`, maintaining a persistent hash file and a CSV (`imported_to_lightroom_hashes.csv`) with hash, path, and original filename (if available).
+   - Both main scripts call this update script at the start, so the hash database is always up to date.
+4. **Safe Deletion**: Use `delete_previously_copied_photos.sh` to safely delete files from your local folder only if their hash is present in the Lightroom hash CSV (i.e., they are safely imported).
+
+## Hash Database and Deduplication
+
+- The script `update_imported_to_lightroom_hashes.sh` is the single source of truth for what has been imported to Lightroom.
+- It is incremental: only new or changed files are hashed, making it efficient for large collections.
+- The CSV (`imported_to_lightroom_hashes.csv`) is used by both main scripts to prevent re-copying and to ensure safe deletion.
+
 ## Use
 1. Start Termux on your phone. It automatically now runs the ssh deamon listeing for ssh connections.
-2. Start a WSL terminal on your computer and run the copy_from_device_to_comp.sh
+2. Start a WSL terminal on your computer and run the copy_from_device_to_comp.sh (this will update the Lightroom hash database automatically).
+3. Import files into Lightroom as usual.
+4. Run delete_previously_copied_photos.sh to safely clean up your local folder (this will also update the hash database automatically).
+
+# To get a list of all imported file paths, use:
+# awk -F, 'NR>1 {gsub(/"/, "", $2); print $2}' imported_to_lightroom_hashes.csv

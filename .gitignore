@@ -1,24 +1,22 @@
 # Personal configuration files (contain private data)
-import_config.conf
-sync_config.conf
+copy_config.conf
 
 # Log files (contain personal data and timestamps)
-*.log
 sync_log*.txt
 device_sync_log*.csv
-delete_imported_summary*.txt
+delete_copied_summary*.txt
+copied_device_files.log
 
 # Hash databases (contain file fingerprints)
-device_imported_hashes.txt
-*_hashes.txt
-kopiert_files.txt
+device_copied_hashes.txt
+imported_to_lightroom_hashes.txt
+imported_to_lightroom_hashes.csv
 
 # Temporary files created during script execution
 *_hashes_only.txt
 already_imported_hashes.txt
 src_hashes_only.txt
 files_to_delete.txt
-kopiert_hashes*.txt
 
 # Backup files
 *.backup
@@ -26,7 +24,20 @@ kopiert_hashes*.txt
 
 # Old script versions
 sync_android_photos(*).sh
+# If you want to ignore all old numbered/backup scripts, uncomment the next line:
+# *(*).sh
 
 # OS generated files
 .DS_Store
 Thumbs.db
+
+# Legacy/obsolete log and hash files (no longer in use)
+imported_device_files.log
+import_config.conf
+sync_config.conf
+device_imported_hashes.txt
+delete_imported_summary*.txt
+kopiert_files.txt
+archive/
+old_logs/
+# End legacy/obsolete
