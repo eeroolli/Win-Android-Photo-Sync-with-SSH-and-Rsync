@@ -34,34 +34,31 @@ incremental_hash_csv() {
   declare -A path_to_hash
   declare -A hash_to_row
   if [ -f "$csvfile" ]; then
-    # Read the CSV without using a pipe, so arrays are available in the parent shell
     while IFS=, read -r hash path orig imported_date; do
-      # Remove quotes from path
-      path=${path%"}
-      path=${path#"}
       path_to_hash["$path"]="$hash"
       hash_to_row["$hash"]="$hash,$path,$orig,$imported_date"
-    done < <(tail -n +2 "$csvfile")
+    done < <(tail -n +2 "$csvfile" | csvtool col 1,2,3,4 -)
   fi
 
   echo "sha1sum,absolute_path,original_filename,imported_date" > "$tmpfile"
 
   while IFS= read -r f; do
     # If file already in CSV and unchanged, reuse row
+    hash=""
+    orig=""
     if [[ -n "${path_to_hash[$f]}" ]]; then
       hash="${path_to_hash[$f]}"
-      echo "${hash_to_row[$hash]}" >> "$tmpfile"
-      continue
+      orig_field=$(echo "${hash_to_row[$hash]}" | awk -F, '{print $3}')
+    else
+      hash=$(sha1sum "$f" | awk '{print $1}')
+      orig="${hash_to_orig[$hash]}"
     fi
-    hash=$(sha1sum "$f" | awk '{print $1}')
-    orig="${hash_to_orig[$hash]}"
     imported_date=""
-    if [[ "$f" =~ Imported\ on\ ([0-9]{4}-[0-9]{2}-[0-9]{2}) ]]; then
+    if [[ "$f" =~ Imported[\ _]on[\ _]([0-9]{4}-[0-9]{2}-[0-9]{2}) ]]; then
       imported_date="${BASH_REMATCH[1]}"
     fi
-    safe_f="${f//\"/\"\"}"  # Escape any double quotes in the filename for CSV
-    echo "DEBUG: $hash,\"$safe_f\",${orig:-unknown},$imported_date"
-    echo "$hash,\"$safe_f\",${orig:-unknown},$imported_date" >> "$tmpfile"
+    safe_f="${f//\"/\"\"}"
+    echo "$hash,\"$safe_f\",${orig:-$orig_field},$imported_date" >> "$tmpfile"
   done < "$filelistfile"
 
   mv "$tmpfile" "$csvfile"

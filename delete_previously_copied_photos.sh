@@ -42,8 +42,16 @@ NC='\033[0m'
 
 # Dependency: csvtool (install with sudo apt-get install csvtool)
 
-# Update the Lightroom hash CSV before proceeding
+# Source config
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CONFIG_FILE="$SCRIPT_DIR/config.conf"
+if [ ! -f "$CONFIG_FILE" ]; then
+  echo -e "${RED}Config file $CONFIG_FILE not found!${NC}"
+  exit 1
+fi
+source "$CONFIG_FILE"
+
+# Update the Lightroom hash CSV before proceeding
 UPDATE_HASH_SCRIPT="$SCRIPT_DIR/update_imported_to_lightroom_hashes.sh"
 if [ ! -x "$UPDATE_HASH_SCRIPT" ]; then
   echo "Error: $UPDATE_HASH_SCRIPT not found or not executable!"
@@ -51,16 +59,19 @@ if [ ! -x "$UPDATE_HASH_SCRIPT" ]; then
 fi
 "$UPDATE_HASH_SCRIPT"
 
-# Candidate source folders (add more as needed)
-CANDIDATE_FOLDERS=("/mnt/i/FraMobil" "/mnt/i/FraKamera")
+# Use config values
+# CANDIDATE_FOLDERS, IMPORTED_TO_LR, LIGHTROOM_HASH_CSV, DEVICE_HASH_LOG, SUMMARY_LOG_PREFIX
 
-# Imported to Lightroom folder
-IMPORTED_TO_LR="/mnt/i/imported_to_lightroom"
-IMPORTED_TO_LR_HASHES="imported_to_lightroom_hashes.txt"
-IMPORTED_TO_LR_CSV="imported_to_lightroom_hashes.csv"
+# Candidate source folders (from config)
+# CANDIDATE_FOLDERS is already an array
 
-# Use device_copied_hashes.txt as the source of truth
-HASH_LOG="device_copied_hashes.txt"
+# Imported to Lightroom folder (from config)
+# IMPORTED_TO_LR
+# Hash CSV (from config)
+IMPORTED_TO_LR_CSV="$LIGHTROOM_HASH_CSV"
+
+# Use device_copied_hashes.txt as the source of truth (from config)
+HASH_LOG="$DEVICE_HASH_LOG"
 if [ ! -f "$HASH_LOG" ]; then
   echo -e "${RED}Hash log $HASH_LOG not found! Cannot safely delete files.${NC}"
   exit 1
@@ -72,7 +83,7 @@ if [ ! -f "$IMPORTED_TO_LR_CSV" ]; then
   echo -e "${RED}CSV file $IMPORTED_TO_LR_CSV not found! Run the update script first.${NC}"
   exit 1
 fi
-csvtool col 1 imported_to_lightroom_hashes.csv | tail -n +2 | sort > imported_to_lightroom_hashes_only.txt
+csvtool col 1 "$IMPORTED_TO_LR_CSV" | tail -n +2 | sort > imported_to_lightroom_hashes_only.txt
 
 # Interactive folder selection
 echo -e "${WHITE}Available source folders:${NC}"
@@ -117,11 +128,9 @@ fi
 
 echo -e "${GREEN}Selected folder(s): $(IFS=, ; echo "${SELECTED_FOLDERS[*]}")${NC}"
 
-
-
 # Summary log
 YEAR=$(date +%Y)
-SUMMARY_LOG="delete_copied_summary_$YEAR.txt"
+SUMMARY_LOG="${SUMMARY_LOG_PREFIX}${YEAR}.txt"
 
 # Ask for dry run mode
 DRY_RUN=0

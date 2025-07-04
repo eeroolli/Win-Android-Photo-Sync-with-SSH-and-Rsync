@@ -45,24 +45,16 @@ WHITE='\033[1;37m'
 GRAY='\033[0;37m'
 NC='\033[0m'
 
-# resolve script directory for config and logs
+# Source config
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-CONFIG_FILE="$SCRIPT_DIR/copy_config.conf"
-LOG_FILE="$SCRIPT_DIR/sync_log.txt"
-
-
-
-echo -e "${YELLOW}Loading configuration from $CONFIG_FILE ...${NC}"
-# Load config
+CONFIG_FILE="$SCRIPT_DIR/config.conf"
 if [ ! -f "$CONFIG_FILE" ]; then
   echo -e "${RED}Config file $CONFIG_FILE not found!${NC}"
   exit 1
 fi
 source "$CONFIG_FILE"
 
-
 # At the start of the script, update the Lightroom hash CSV and persistent hash file
-# This ensures deduplication and safe deletion always use the latest state
 UPDATE_HASH_SCRIPT="$SCRIPT_DIR/update_imported_to_lightroom_hashes.sh"
 if [ ! -x "$UPDATE_HASH_SCRIPT" ]; then
   echo "Error: $UPDATE_HASH_SCRIPT not found or not executable!"
@@ -70,6 +62,11 @@ if [ ! -x "$UPDATE_HASH_SCRIPT" ]; then
 fi
 "$UPDATE_HASH_SCRIPT"
 
+# Use config values for logs
+YEAR=$(date +%Y)
+SUMMARY_LOG="$SCRIPT_DIR/sync_log_${YEAR}.txt"
+FILE_LOG="$SCRIPT_DIR/device_sync_log_${YEAR}.csv"
+COPY_LOG_FILE="$SCRIPT_DIR/$COPY_LOG_FILE"
 
 # set -x
 
@@ -103,12 +100,6 @@ select folder in $SUBFOLDERS "All"; do
 done
 
 echo -e "${GREEN}Selected folder(s): $(join_by ', ' "${SELECTED_FOLDERS[@]}")${NC}\n"
-
-# Set up log files with year-based rotation
-YEAR=$(date +%Y)
-SUMMARY_LOG="$SCRIPT_DIR/sync_log_$YEAR.txt"
-FILE_LOG="$SCRIPT_DIR/device_sync_log_$YEAR.csv"
-COPY_LOG_FILE="$SCRIPT_DIR/copied_device_files.log"
 
 # Write CSV header if file does not exist
 if [ ! -f "$FILE_LOG" ]; then
