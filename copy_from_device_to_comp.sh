@@ -26,6 +26,11 @@
 #
 # This ensures you only import new files, never re-copy files already imported, and gives you full control and feedback at every step.
 #
+# Dependency: csvtool (install with sudo apt-get install csvtool)
+# Example: To check if a hash exists in the Lightroom import CSV
+# if csvtool col 1 imported_to_lightroom_hashes.csv | grep -qx "$hash"; then
+#   echo "File already imported to Lightroom."
+# fi
 
 set -e
 trap 'echo -e "\033[0;31m❌ An error occurred. Exiting.\033[0m"' ERR

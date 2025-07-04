@@ -21,8 +21,16 @@ It is designed for workflows where the local folder is a temporary staging area 
 - **Bash** (the script is written for bash)
 - **rsync**
 - **ssh** (OpenSSH client)
+- **csvtool** (for robust CSV parsing in all scripts)
 - **awk, grep, sort, stat** (standard GNU utilities)
 - **A working SSH keypair** for passwordless login to your phone
+
+#### Install Required Packages
+Install all required packages with:
+```sh
+sudo apt-get update
+sudo apt-get install bash rsync openssh-client csvtool gawk grep
+```
 
 ### On Your Android Phone
 - **Termux** (free from F-Droid or Play Store)
@@ -34,7 +42,7 @@ It is designed for workflows where the local folder is a temporary staging area 
 
 ## Configuration
 
-1. Copy the example config:
+1. Copy the example config in the script directory:
    ```sh
    cp copy_config.example.conf copy_config.conf
    ```
@@ -96,3 +104,4 @@ EOF
 
 # To get a list of all imported file paths, use:
 # awk -F, 'NR>1 {gsub(/"/, "", $2); print $2}' imported_to_lightroom_hashes.csv
+

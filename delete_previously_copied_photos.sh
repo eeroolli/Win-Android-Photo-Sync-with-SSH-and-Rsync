@@ -40,6 +40,8 @@ WHITE='\033[1;37m'
 GRAY='\033[0;37m'
 NC='\033[0m'
 
+# Dependency: csvtool (install with sudo apt-get install csvtool)
+
 # Update the Lightroom hash CSV before proceeding
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 UPDATE_HASH_SCRIPT="$SCRIPT_DIR/update_imported_to_lightroom_hashes.sh"
@@ -70,7 +72,7 @@ if [ ! -f "$IMPORTED_TO_LR_CSV" ]; then
   echo -e "${RED}CSV file $IMPORTED_TO_LR_CSV not found! Run the update script first.${NC}"
   exit 1
 fi
-awk -F, 'NR>1 {gsub(/\"/, "", $2); print $1 > "imported_to_lightroom_hashes_only.txt"}' "$IMPORTED_TO_LR_CSV"
+csvtool col 1 imported_to_lightroom_hashes.csv | tail -n +2 | sort > imported_to_lightroom_hashes_only.txt
 
 # Interactive folder selection
 echo -e "${WHITE}Available source folders:${NC}"
