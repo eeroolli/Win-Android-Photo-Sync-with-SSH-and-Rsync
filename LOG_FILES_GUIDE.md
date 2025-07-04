@@ -85,14 +85,3 @@ All log files are stored in the same directory as the scripts:
 
 Log files use year-based naming (e.g., `sync_log_2025.txt`) to keep historical data organized. Each year gets its own set of log files.
 
-## CSV Parsing with csvtool
-All scripts use `csvtool` for robust, RFC-compliant CSV parsing. This ensures correct handling of paths with spaces, commas, or quotes.
-
-Install csvtool with:
-    sudo apt-get install csvtool
-
-Example: To get all imported file paths:
-    csvtool col 2 imported_to_lightroom_hashes.csv | tail -n +2
-
-To check if a file hash exists:
-    csvtool col 1 imported_to_lightroom_hashes.csv | grep -qx "$hash" 
