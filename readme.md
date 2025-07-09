@@ -16,6 +16,7 @@ It is designed for workflows where the local folder is a temporary staging area 
 - **Centralized, incremental hash database for Lightroom import folder**
 
 ## Requirements
+You need to understand that you are doing everything on your own responsibility.  This script give detailed instructions on my system, but it could be that they are not doing what you expect on your system.  If you do not understand what is going on, you should probably just use a USB cable to copy the files.  
 
 ### On Your Computer (WSL/Linux)
 - **Bash** (the script is written for bash)
@@ -101,7 +102,4 @@ EOF
 2. Start a WSL terminal on your computer and run the copy_from_device_to_comp.sh (this will update the Lightroom hash database automatically).
 3. Import files into Lightroom as usual.
 4. Run delete_previously_copied_photos.sh to safely clean up your local folder (this will also update the hash database automatically).
-
-# To get a list of all imported file paths, use:
-# awk -F, 'NR>1 {gsub(/"/, "", $2); print $2}' imported_to_lightroom_hashes.csv
 
