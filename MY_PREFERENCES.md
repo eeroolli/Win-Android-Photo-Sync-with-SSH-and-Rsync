@@ -8,8 +8,9 @@
 - All important files (logs, CSVs, hash databases) should use absolute paths, not relative ones, to avoid ambiguity and ensure scripts work regardless of the current working directory.
 
 ## Centralized Configuration
-- All scripts should source a single config file (`config.conf`) for paths, log locations, and other settings.
-- No hardcoded paths in scripts—everything should be configurable.
+- All scripts in one project should source a single config file. For example (`config.conf`) for paths, log locations, and other settings.
+- in some situations it is better to use [project_name].conf instead.
+- No hardcoded paths in scripts — everything should be configurable.
 
 ## Consistent Naming and Terminology
 - Use clear, consistent terminology. For example:
