@@ -26,8 +26,8 @@ incremental_hash_csv() {
   local tmpfile="${csvfile}.tmp"
   local filelistfile="${csvfile}.filelist"
 
-  # Build a map of hash -> original filename from the copy log
-  declare -A hash_to_orig
+# Build a map of hash -> original filename from the copy log
+declare -A hash_to_orig
   if [ -f "$copylog" ]; then
     while IFS='|' read -r orig_path mtime; do
       if [ -f "$orig_path" ]; then
@@ -35,7 +35,7 @@ incremental_hash_csv() {
         hash_to_orig["$hash"]=$(basename "$orig_path")
       fi
     done < "$copylog"
-  fi
+fi
 
   # Get all files in folder
   find "$folder" -type f | sort > "$filelistfile"
@@ -45,7 +45,9 @@ incremental_hash_csv() {
   declare -A hash_to_row
   if [ -f "$csvfile" ]; then
     while IFS=, read -r hash path orig imported_date; do
-      path_to_hash["$path"]="$hash"
+      # Strip quotes from path for normalization
+      path_unquoted=$(echo "$path" | sed 's/^"\(.*\)"$/\1/')
+      path_to_hash["$path_unquoted"]="$hash"
       hash_to_row["$hash"]="$hash,$path,$orig,$imported_date"
     done < <(tail -n +2 "$csvfile" | csvtool col 1,2,3,4 -)
   fi
@@ -61,8 +63,8 @@ incremental_hash_csv() {
       hash="${path_to_hash[$f]}"
       orig_field=$(echo "${hash_to_row[$hash]}" | awk -F, '{print $3}')
     else
-      hash=$(sha1sum "$f" | awk '{print $1}')
-      orig="${hash_to_orig[$hash]}"
+    hash=$(sha1sum "$f" | awk '{print $1}')
+    orig="${hash_to_orig[$hash]}"
     fi
     # Get file creation date
     created_date=$(stat -c '%W' "$f")

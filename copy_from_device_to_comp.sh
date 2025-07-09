@@ -28,9 +28,11 @@
 #
 # Dependency: csvtool (install with sudo apt-get install csvtool)
 # Example: To check if a hash exists in the Lightroom import CSV
-# if csvtool col 1 imported_to_lightroom_hashes.csv | grep -qx "$hash"; then
-#   echo "File already imported to Lightroom."
-# fi
+# Always use csvtool and strip quotes for robust comparison:
+# if csvtool col 1,2 imported_to_lightroom_hashes.csv | tail -n +2 | while IFS=, read -r hash path; do
+#   path_unquoted=$(echo "$path" | sed 's/^"\(.*\)"$/\1/')
+#   # compare $path_unquoted to your filesystem path
+# done
 
 set -e
 trap 'echo -e "\033[0;31m❌ An error occurred. Exiting.\033[0m"' ERR
@@ -66,7 +68,7 @@ fi
 YEAR=$(date +%Y)
 SUMMARY_LOG="$SCRIPT_DIR/sync_log_${YEAR}.txt"
 FILE_LOG="$SCRIPT_DIR/device_sync_log_${YEAR}.csv"
-COPY_LOG_FILE="$SCRIPT_DIR/$COPY_LOG_FILE"
+COPY_LOG_FILE="$IMPORT_LOG_FILE"
 
 # set -x
 
@@ -298,7 +300,7 @@ for SUBF in "${SELECTED_FOLDERS[@]}"; do
   fi
 
   # --- Confirm ---
-  echo -ne "${YELLOW}Proceed with sync for $SUBF? (y/N): ${NC}"
+  echo -ne "${YELLOW}Proceed with action for $SUBF? (y/N): ${NC}"
   read go
   if [[ ! "$go" =~ ^[Yy]$ ]]; then
     echo -e "${RED}  Skipped by user.${NC}"
@@ -329,6 +331,10 @@ for SUBF in "${SELECTED_FOLDERS[@]}"; do
 
   # --- Update copy log ---
   # Log all files now present in local subfolder
+  if [ -d "$COPY_LOG_FILE" ]; then
+    echo "Error: COPY_LOG_FILE ($COPY_LOG_FILE) is a directory, not a file!"
+    exit 1
+  fi
   find "$LOCAL_SUBFOLDER" -type f | while read -r f; do
     echo "$f" >> "$COPY_LOG_FILE"
   done

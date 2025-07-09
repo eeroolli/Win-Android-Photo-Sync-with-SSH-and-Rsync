@@ -83,7 +83,11 @@ if [ ! -f "$IMPORTED_TO_LR_CSV" ]; then
   echo -e "${RED}CSV file $IMPORTED_TO_LR_CSV not found! Run the update script first.${NC}"
   exit 1
 fi
-csvtool col 1 "$IMPORTED_TO_LR_CSV" | tail -n +2 | sort > imported_to_lightroom_hashes_only.txt
+# Extract hashes and unquoted paths for robust comparison
+csvtool col 1,2 "$IMPORTED_TO_LR_CSV" | tail -n +2 | while IFS=, read -r hash path; do
+  path_unquoted=$(echo "$path" | sed 's/^"\(.*\)"$/\1/')
+  echo "$hash $path_unquoted"
+done | sort > imported_to_lightroom_hashes_only.txt
 
 # Interactive folder selection
 echo -e "${WHITE}Available source folders:${NC}"
