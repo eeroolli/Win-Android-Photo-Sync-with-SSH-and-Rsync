@@ -1,6 +1,7 @@
 #!/bin/bash
 # update_imported_to_lightroom_hashes.sh
-# Incrementally hash all files in /mnt/i/imported_to_lightroom and generate a CSV with hash, path, original filename, and imported date.
+# Fast, truly incremental hashing for Lightroom import folder.
+# CSV columns: sha1sum,absolute_path,original_filename,created_date,import_date,mtime,size
 
 set -e
 
@@ -13,86 +14,91 @@ if [ ! -f "$CONFIG_FILE" ]; then
 fi
 source "$CONFIG_FILE"
 
-# Use config values for paths
 IMPORT_DIR="$IMPORTED_TO_LR"
 CSV_FILE="$LIGHTROOM_HASH_CSV"
-COPY_LOG="$DEVICE_HASH_LOG"
+DEVICE_HASHES="$DEVICE_HASH_LOG"
 
-# Incremental hashing function for CSV-only workflow
-incremental_hash_csv() {
-  local folder="$1"
-  local csvfile="$2"
-  local copylog="$3"
-  local tmpfile="${csvfile}.tmp"
-  local filelistfile="${csvfile}.filelist"
+start_time=$(date +%s)
+echo "[INFO] Start: $(date)"
 
-# Build a map of hash -> original filename from the copy log
+# Build hash -> original filename map from device_copied_hashes.txt
+# (hash, path)
 declare -A hash_to_orig
-  if [ -f "$copylog" ]; then
-    while IFS='|' read -r orig_path mtime; do
-      if [ -f "$orig_path" ]; then
-        hash=$(sha1sum "$orig_path" | awk '{print $1}')
-        hash_to_orig["$hash"]=$(basename "$orig_path")
-      fi
-    done < "$copylog"
+if [ -f "$DEVICE_HASHES" ]; then
+  while read -r hash path; do
+    hash_to_orig["$hash"]="$(basename "$path")"
+  done < "$DEVICE_HASHES"
 fi
 
-  # Get all files in folder
-  find "$folder" -type f | sort > "$filelistfile"
-
-  # Read existing CSV into a map for incremental update
-  declare -A path_to_hash
-  declare -A hash_to_row
-  if [ -f "$csvfile" ]; then
-    while IFS=, read -r hash path orig imported_date; do
-      # Strip quotes from path for normalization
+# Build path+mtime+size -> hash map from existing CSV
+# (path, mtime, size, hash, orig, created_date, import_date)
+declare -A filekey_to_row
+if [ -f "$CSV_FILE" ]; then
+  {
+    read # skip header
+    while IFS=, read -r hash path orig created_date import_date mtime size; do
       path_unquoted=$(echo "$path" | sed 's/^"\(.*\)"$/\1/')
-      path_to_hash["$path_unquoted"]="$hash"
-      hash_to_row["$hash"]="$hash,$path,$orig,$imported_date"
-    done < <(tail -n +2 "$csvfile" | csvtool col 1,2,3,4 -)
+      filekey="${path_unquoted}|${mtime}|${size}"
+      filekey_to_row["$filekey"]="$hash,$path,$orig,$created_date,$import_date,$mtime,$size"
+    done
+  } < "$CSV_FILE"
+fi
+
+mid_time=$(date +%s)
+echo "[INFO] Finished loading CSV and device hashes: $(date) (Elapsed: $((mid_time-start_time))s)"
+
+# Prepare output
+TMP_CSV="${CSV_FILE}.tmp"
+echo "sha1sum,absolute_path,original_filename,created_date,import_date,mtime,size" > "$TMP_CSV"
+
+# Cache for parent folder import date
+declare -A folder_import_date
+
+count=0
+skipped=0
+hashed=0
+
+set -x
+trap 'echo "[ERROR] at line $LINENO: $BASH_COMMAND"' ERR
+
+find "$IMPORT_DIR" -type f -print0 || true | while IFS= read -r -d '' f; do
+  ((count++))
+  mtime=$(stat -c '%Y' "$f")
+  size=$(stat -c '%s' "$f")
+  filekey="$f|$mtime|$size"
+  hash=""
+  orig=""
+  created_date=$(stat -c '%W' "$f")
+  [ "$created_date" = "0" ] && created_date=$(stat -c '%Y' "$f")
+  created_date_fmt=$(date -d "@$created_date" '+%Y-%m-%d %H:%M:%S')
+  parent_dir=$(dirname "$f")
+  if [[ -z "${folder_import_date[$parent_dir]}" ]]; then
+    import_date=$(stat -c '%W' "$parent_dir")
+    [ "$import_date" = "0" ] && import_date=$(stat -c '%Y' "$parent_dir")
+    import_date_fmt=$(date -d "@$import_date" '+%Y-%m-%d %H:%M:%S')
+    folder_import_date["$parent_dir"]="$import_date_fmt"
   fi
+  import_date_fmt="${folder_import_date[$parent_dir]}"
+  # Check if we can reuse hash
+  if [[ -n "${filekey_to_row[$filekey]}" ]]; then
+    row="${filekey_to_row[$filekey]}"
+    echo "$row" >> "$TMP_CSV"
+    ((skipped++))
+    continue
+  fi
+  hash=$(sha1sum "$f" | awk '{print $1}')
+  orig="${hash_to_orig[$hash]}"
+  safe_f="${f//\"/\"\"}"
+  echo "$hash,\"$safe_f\",$orig,$created_date_fmt,$import_date_fmt,$mtime,$size" >> "$TMP_CSV"
+  ((hashed++))
+done
 
-  echo "sha1sum,absolute_path,original_filename,created_date,imported_date" > "$tmpfile"
+wait
 
-  declare -A folder_import_date
+end_time=$(date +%s)
+echo "[INFO] Finished hashing: $(date) (Elapsed: $((end_time-mid_time))s)"
+echo "[INFO] Total files: $count, Skipped (cache hit): $skipped, Hashed: $hashed"
 
-  while IFS= read -r f; do
-    hash=""
-    orig=""
-    if [[ -n "${path_to_hash[$f]}" ]]; then
-      hash="${path_to_hash[$f]}"
-      orig_field=$(echo "${hash_to_row[$hash]}" | awk -F, '{print $3}')
-    else
-    hash=$(sha1sum "$f" | awk '{print $1}')
-    orig="${hash_to_orig[$hash]}"
-    fi
-    # Get file creation date
-    created_date=$(stat -c '%W' "$f")
-    if [[ "$created_date" == "0" ]]; then
-      created_date=$(stat -c '%Y' "$f")
-    fi
-    created_date_fmt=$(date -d "@$created_date" '+%Y-%m-%d %H:%M:%S')
-    # Get parent folder creation date as import date, with caching
-    parent_dir=$(dirname "$f")
-    if [[ -z "${folder_import_date[$parent_dir]}" ]]; then
-      import_date=$(stat -c '%W' "$parent_dir")
-      if [[ "$import_date" == "0" ]]; then
-        import_date=$(stat -c '%Y' "$parent_dir")
-      fi
-      import_date_fmt=$(date -d "@$import_date" '+%Y-%m-%d %H:%M:%S')
-      folder_import_date["$parent_dir"]="$import_date_fmt"
-    fi
-    import_date_fmt="${folder_import_date[$parent_dir]}"
-    safe_f="${f//\"/\"\"}"
-    echo "$hash,\"$safe_f\",${orig:-$orig_field},$created_date_fmt,$import_date_fmt" >> "$tmpfile"
-  done < "$filelistfile"
-
-  mv "$tmpfile" "$csvfile"
-  rm -f "$filelistfile"
-}
-
-echo "Incrementally hashing $IMPORT_DIR and updating $CSV_FILE ..."
-echo "Timestamp: $(date)"
-incremental_hash_csv "$IMPORT_DIR" "$CSV_FILE" "$COPY_LOG"
-echo "Done."
-echo "Timestamp: $(date)"
+mv "$TMP_CSV" "$CSV_FILE"
+echo "Done. CSV updated: $CSV_FILE"
+echo "[INFO] Total elapsed: $((end_time-start_time))s"
