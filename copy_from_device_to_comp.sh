@@ -340,8 +340,13 @@ for SUBF in "${SELECTED_FOLDERS[@]}"; do
     dest="$local_file"
     echo "$NOW,$ACTION,$src,$dest,success" >> "$FILE_LOG"
   done
+  echo -e " "
+  echo -e "The files have been copied to $LOCAL_SUBFOLDER"
+  echo -e " "
   echo -e "${GREEN}  Sync complete for $SUBF.${NC}"
+  echo -e " "
   echo "  Sync complete for $SUBF." >> "$SUMMARY_LOG"
+
 
   # --- Update copy log ---
   # Log all files now present in local subfolder
