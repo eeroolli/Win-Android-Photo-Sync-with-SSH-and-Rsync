@@ -260,27 +260,41 @@ for SUBF in "${SELECTED_FOLDERS[@]}"; do
   echo -e "\n${WHITE}[$NOW] Processing subfolder: $SUBF${NC}"
   echo -e "  ${GRAY}Selection rule: ${WHITE}$FILE_FILTER${NC}"
   echo -e "  ${GRAY}Action: ${WHITE}$ACTION from $REMOTE_DIR/$SUBF to $LOCAL_DIR/$SUBF${NC}"
-  
-  if [[ $FILE_COUNT -gt 0 ]]; then
-    echo -e "  ${GRAY}Number of files: ${WHITE}$FILE_COUNT${NC}"
+
+  # Use rsync --dry-run to count files that will actually be copied
+  LOCAL_SUBFOLDER="$LOCAL_DIR/$SUBF"
+  mkdir -p "$LOCAL_SUBFOLDER"
+  RSYNC_OPTS="-av --progress"
+  [[ "$ACTION" == "copy" ]] && RSYNC_OPTS+=" --ignore-existing"
+  RSYNC_CMD="rsync $RSYNC_OPTS -e \"ssh -i $SSH_KEY -p $PHONE_PORT\" $PHONE_USER@$PHONE_IP:'$REMOTE_SUBFOLDER/' '$LOCAL_SUBFOLDER/'"
+  DRY_RUN_CMD="$RSYNC_CMD --dry-run"
+  FILES_TO_COPY_COUNT=$(eval "$DRY_RUN_CMD" | grep -v '/$' | grep -v '^sending ' | grep -v '^sent ' | grep -v '^total size is ' | grep -c .)
+
+  if [[ $FILES_TO_COPY_COUNT -gt 0 ]]; then
+    echo -e "  ${GRAY}Number of files to be copied: ${WHITE}$FILES_TO_COPY_COUNT${NC}"
+    # Get oldest and newest file dates (optional, keep if useful)
+    OLDEST_FILE=$(ssh -i "$SSH_KEY" -p "$PHONE_PORT" "$PHONE_USER@$PHONE_IP" "$FIND_CMD -printf '%T@ %p\n' | sort -n | head -1 | cut -d' ' -f2-" || true)
+    NEWEST_FILE=$(ssh -i "$SSH_KEY" -p "$PHONE_PORT" "$PHONE_USER@$PHONE_IP" "$FIND_CMD -printf '%T@ %p\n' | sort -n | tail -1 | cut -d' ' -f2-" || true)
+    OLDEST_DATE=$(ssh -i "$SSH_KEY" -p "$PHONE_PORT" "$PHONE_USER@$PHONE_IP" "stat -c '%y' '$OLDEST_FILE' | cut -d'.' -f1" || true)
+    NEWEST_DATE=$(ssh -i "$SSH_KEY" -p "$PHONE_PORT" "$PHONE_USER@$PHONE_IP" "stat -c '%y' '$NEWEST_FILE' | cut -d'.' -f1" || true)
     echo -e "  ${GRAY}Oldest file: ${WHITE}$OLDEST_DATE${NC}"
     echo -e "  ${GRAY}Newest file: ${WHITE}$NEWEST_DATE${NC}"
   else
-    echo -e "  ${GRAY}Number of files: ${WHITE}0${NC}"
+    echo -e "  ${GRAY}Number of files to be copied: ${WHITE}0${NC}"
     echo -e "  ${GRAY}Oldest file: ${WHITE}-${NC}"
     echo -e "  ${GRAY}Newest file: ${WHITE}-${NC}"
   fi
-  
+
   # Write to log file (same format)
   echo "" >> "$SUMMARY_LOG"
   echo "[$NOW] Processing subfolder: $SUBF" >> "$SUMMARY_LOG"
   echo "  Selection rule: $FILE_FILTER" >> "$SUMMARY_LOG"
   echo "  Action: $ACTION from $REMOTE_DIR/$SUBF to $LOCAL_DIR/$SUBF" >> "$SUMMARY_LOG"
-  echo "  Number of files: $FILE_COUNT" >> "$SUMMARY_LOG"
+  echo "  Number of files to be copied: $FILES_TO_COPY_COUNT" >> "$SUMMARY_LOG"
   echo "  Oldest file: $OLDEST_DATE" >> "$SUMMARY_LOG"
   echo "  Newest file: $NEWEST_DATE" >> "$SUMMARY_LOG"
 
-  if [[ -z "$FILE_LIST" || $FILE_COUNT -eq 0 ]]; then
+  if [[ $FILES_TO_COPY_COUNT -eq 0 ]]; then
     echo -e "${YELLOW}  No files to copy or move for $SUBF. Nothing to do.${NC}"
     echo "  No files to copy or move for $SUBF. Nothing to do." >> "$SUMMARY_LOG"
     continue
