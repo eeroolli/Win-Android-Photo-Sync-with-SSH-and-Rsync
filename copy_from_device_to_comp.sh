@@ -328,10 +328,10 @@ for SUBF in "${SELECTED_FOLDERS[@]}"; do
   RSYNC_OPTS="-av --progress"
   [[ "$ACTION" == "copy" ]] && RSYNC_OPTS+=" --ignore-existing"
   RSYNC_CMD="rsync $RSYNC_OPTS -e \"ssh -i $SSH_KEY -p $PHONE_PORT\" $PHONE_USER@$PHONE_IP:'$REMOTE_SUBFOLDER/' '$LOCAL_SUBFOLDER/'"
-  echo -e "${GREEN}Starting sync for $SUBF...${NC}"
+  echo -e "${GREEN}Starting $ACTION for $SUBF...${NC}"
   # Perform sync and log files after completion
   eval "$RSYNC_CMD --progress"
-  
+
   # Log all files that were copied/moved by checking what's new in the local folder
   find "$LOCAL_SUBFOLDER" -type f -newer "$FILE_LOG" 2>/dev/null | while read -r local_file; do
     rel_path="${local_file#$LOCAL_SUBFOLDER/}"
@@ -339,14 +339,18 @@ for SUBF in "${SELECTED_FOLDERS[@]}"; do
     src="$REMOTE_SUBFOLDER/$rel_path"
     dest="$local_file"
     echo "$NOW,$ACTION,$src,$dest,success" >> "$FILE_LOG"
+    # If move, delete from phone after successful transfer
+    if [[ "$ACTION" == "move" ]]; then
+      ssh -i "$SSH_KEY" -p "$PHONE_PORT" "$PHONE_USER@$PHONE_IP" "rm -f '$src'" && \
+      echo "$NOW,deleted,$src,,success" >> "$FILE_LOG"
+    fi
   done
   echo -e " "
-  echo -e "The files have been copied to $LOCAL_SUBFOLDER"
+  echo -e "The files have been $ACTIONd to $LOCAL_SUBFOLDER"
   echo -e " "
-  echo -e "${GREEN}  Sync complete for $SUBF.${NC}"
+  echo -e "${GREEN}  $ACTION complete for $SUBF.${NC}"
   echo -e " "
-  echo "  Sync complete for $SUBF." >> "$SUMMARY_LOG"
-
+  echo "  $ACTION complete for $SUBF." >> "$SUMMARY_LOG"
 
   # --- Update copy log ---
   # Log all files now present in local subfolder
@@ -358,8 +362,17 @@ for SUBF in "${SELECTED_FOLDERS[@]}"; do
     echo "$f" >> "$COPY_LOG_FILE"
   done
 
-  # --- Deletion step ---
-  if [[ $DELETE_COPIED -eq 1 && $DELETE_COUNT -gt 0 ]]; then
+  # --- Deletion step (for copy+delete only) ---
+  if [[ "$ACTION" == "copy" && $DELETE_COPIED -eq 1 && $FILE_COUNT -gt 0 ]]; then
+    # Only delete files that are in the copy log
+    if [ -f "$COPY_LOG_FILE" ]; then
+      FILES_TO_DELETE=$(comm -12 <(echo "$FILE_LIST" | sort || true) <(awk '{print $1}' "$COPY_LOG_FILE" | sort || true) || true)
+      DELETE_COUNT=$(echo "$FILES_TO_DELETE" | grep -c . || true)
+    else
+      DELETE_COUNT=0
+    fi
+    echo -e "  ${GRAY}Files to be deleted: ${WHITE}$DELETE_COUNT${NC}"
+    echo "  Files to be deleted: $DELETE_COUNT" >> "$SUMMARY_LOG"
     echo -ne "${YELLOW}About to delete $DELETE_COUNT files from phone in $SUBF. Continue? (y/N): ${NC}"
     read del_confirm
     if [[ "$del_confirm" =~ ^[Yy]$ ]]; then
