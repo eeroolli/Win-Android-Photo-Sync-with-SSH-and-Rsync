@@ -151,7 +151,29 @@ fi
 
 # --- Step 2: Process each selected source folder ---
 for SRCFOLDER in "${SELECTED_FOLDERS[@]}"; do
-  SRC_HASHES="$(basename "$SRCFOLDER" | tr -c 'A-Za-z0-9' '_')_hashes.txt"
+  SRC_HASHES="$SCRIPT_DIR/$(basename "$SRCFOLDER" | tr -c 'A-Za-z0-9' '_')_hashes.txt"
+  # Check if hash file is missing or outdated
+  REGEN_HASHES=0
+  if [ ! -f "$SRC_HASHES" ]; then
+    echo -e "${YELLOW}Hash file $SRC_HASHES not found for $SRCFOLDER. Generating...${NC}"
+    REGEN_HASHES=1
+  else
+    # Check if any file in the folder is newer than the hash file
+    NEWEST_FILE_MTIME=$(find "$SRCFOLDER" -type f -printf '%T@\n' | sort -n | tail -1)
+    HASHFILE_MTIME=$(stat -c '%Y' "$SRC_HASHES")
+    if [[ -n "$NEWEST_FILE_MTIME" && "$NEWEST_FILE_MTIME" -gt "$HASHFILE_MTIME" ]]; then
+      echo -e "${YELLOW}Hash file $SRC_HASHES is older than the newest file in $SRCFOLDER. Regenerating...${NC}"
+      REGEN_HASHES=1
+    fi
+  fi
+  if [[ $REGEN_HASHES -eq 1 ]]; then
+    find "$SRCFOLDER" -type f -print0 | xargs -0 sha1sum > "$SRC_HASHES"
+    if [ $? -ne 0 ]; then
+      echo -e "${RED}Failed to generate hash file for $SRCFOLDER. Skipping.${NC}"
+      echo "[$(date '+%Y-%m-%d %H:%M:%S')] Failed to generate hash file $SRC_HASHES for $SRCFOLDER. Skipped." >> "$SUMMARY_LOG"
+      continue
+    fi
+  fi
   echo -e "${YELLOW}Scanning $SRCFOLDER for files...${NC}"
   awk '{print $1}' "$SRC_HASHES" | sort > src_hashes_only.txt
   comm -12 src_hashes_only.txt imported_to_lightroom_hashes_only.txt > already_imported_hashes.txt
