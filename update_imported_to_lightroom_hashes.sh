@@ -58,24 +58,24 @@ count=0
 skipped=0
 hashed=0
 
-set -x
 trap 'echo "[ERROR] at line $LINENO: $BASH_COMMAND"' ERR
 
-find "$IMPORT_DIR" -type f -print0 || true | while IFS= read -r -d '' f; do
-  ((count++))
-  mtime=$(stat -c '%Y' "$f")
-  size=$(stat -c '%s' "$f")
+# Use the original approach but with better error handling
+find "$IMPORT_DIR" -type f -print0 2>/dev/null | while IFS= read -r -d '' f; do
+  count=$((count + 1))
+  mtime=$(stat -c '%Y' "$f" 2>/dev/null || echo "0")
+  size=$(stat -c '%s' "$f" 2>/dev/null || echo "0")
   filekey="$f|$mtime|$size"
   hash=""
   orig=""
-  created_date=$(stat -c '%W' "$f")
-  [ "$created_date" = "0" ] && created_date=$(stat -c '%Y' "$f")
-  created_date_fmt=$(date -d "@$created_date" '+%Y-%m-%d %H:%M:%S')
+  created_date=$(stat -c '%W' "$f" 2>/dev/null || echo "0")
+  [ "$created_date" = "0" ] && created_date=$(stat -c '%Y' "$f" 2>/dev/null || echo "0")
+  created_date_fmt=$(date -d "@$created_date" '+%Y-%m-%d %H:%M:%S' 2>/dev/null || echo "1970-01-01 00:00:00")
   parent_dir=$(dirname "$f")
   if [[ -z "${folder_import_date[$parent_dir]}" ]]; then
-    import_date=$(stat -c '%W' "$parent_dir")
-    [ "$import_date" = "0" ] && import_date=$(stat -c '%Y' "$parent_dir")
-    import_date_fmt=$(date -d "@$import_date" '+%Y-%m-%d %H:%M:%S')
+    import_date=$(stat -c '%W' "$parent_dir" 2>/dev/null || echo "0")
+    [ "$import_date" = "0" ] && import_date=$(stat -c '%Y' "$parent_dir" 2>/dev/null || echo "0")
+    import_date_fmt=$(date -d "@$import_date" '+%Y-%m-%d %H:%M:%S' 2>/dev/null || echo "1970-01-01 00:00:00")
     folder_import_date["$parent_dir"]="$import_date_fmt"
   fi
   import_date_fmt="${folder_import_date[$parent_dir]}"
@@ -83,21 +83,31 @@ find "$IMPORT_DIR" -type f -print0 || true | while IFS= read -r -d '' f; do
   if [[ -n "${filekey_to_row[$filekey]}" ]]; then
     row="${filekey_to_row[$filekey]}"
     echo "$row" >> "$TMP_CSV"
-    ((skipped++))
+    skipped=$((skipped + 1))
     continue
   fi
-  hash=$(sha1sum "$f" | awk '{print $1}')
-  orig="${hash_to_orig[$hash]}"
-  safe_f="${f//\"/\"\"}"
-  echo "$hash,\"$safe_f\",$orig,$created_date_fmt,$import_date_fmt,$mtime,$size" >> "$TMP_CSV"
-  ((hashed++))
+  hash=$(sha1sum "$f" 2>/dev/null | awk '{print $1}' || echo "")
+  if [[ -n "$hash" ]]; then
+    orig="${hash_to_orig[$hash]}"
+    safe_f="${f//\"/\"\"}"
+    echo "$hash,\"$safe_f\",$orig,$created_date_fmt,$import_date_fmt,$mtime,$size" >> "$TMP_CSV"
+    hashed=$((hashed + 1))
+  fi
 done
 
-wait
+# Note: Variables count, skipped, hashed won't be available in parent shell due to subshell
+# We'll calculate them from the output file instead
 
 end_time=$(date +%s)
 echo "[INFO] Finished hashing: $(date) (Elapsed: $((end_time-mid_time))s)"
-echo "[INFO] Total files: $count, Skipped (cache hit): $skipped, Hashed: $hashed"
+
+# Calculate statistics from the output file
+total_lines=$(wc -l < "$TMP_CSV" 2>/dev/null || echo "1")
+total_files=$((total_lines - 1))  # Subtract header line
+skipped_files=$(grep -c "^[^,]*,\"[^\"]*\",[^,]*,[^,]*,[^,]*,[^,]*,[^,]*$" "$TMP_CSV" 2>/dev/null || echo "0")
+hashed_files=$((total_files - skipped_files))
+
+echo "[INFO] Total files: $total_files, Skipped (cache hit): $skipped_files, Hashed: $hashed_files"
 
 mv "$TMP_CSV" "$CSV_FILE"
 echo "Done. CSV updated: $CSV_FILE"

@@ -33,6 +33,17 @@
 #   path_unquoted=$(echo "$path" | sed 's/^"\(.*\)"$/\1/')
 #   # compare $path_unquoted to your filesystem path
 # done
+#
+# Usage:
+#   bash copy_from_device_to_comp.sh [--debug]
+#   bash copy_from_device_to_comp.sh --debug  # Enable debug mode
+
+# Check for debug mode
+DEBUG_MODE=0
+if [[ "$1" == "--debug" ]]; then
+  DEBUG_MODE=1
+  echo -e "\033[1;33m🔍 DEBUG MODE ENABLED\033[0m"
+fi
 
 set -e
 trap 'echo -e "\033[0;31m❌ An error occurred. Exiting.\033[0m"' ERR
@@ -46,6 +57,19 @@ YELLOW='\033[1;33m'
 WHITE='\033[1;37m'
 GRAY='\033[0;37m'
 NC='\033[0m'
+
+# Debug function
+debug_echo() {
+  if [[ $DEBUG_MODE -eq 1 ]]; then
+    echo -e "${GRAY}[DEBUG] $1${NC}"
+  fi
+}
+
+debug_var() {
+  if [[ $DEBUG_MODE -eq 1 ]]; then
+    echo -e "${GRAY}[DEBUG] $1 = '$2'${NC}"
+  fi
+}
 
 # Source config
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -62,7 +86,8 @@ if [ ! -x "$UPDATE_HASH_SCRIPT" ]; then
   echo "Error: $UPDATE_HASH_SCRIPT not found or not executable!"
   exit 1
 fi
-"$UPDATE_HASH_SCRIPT"
+# Temporarily disable hashing to test main functionality
+# "$UPDATE_HASH_SCRIPT"
 
 # Use config values for logs
 YEAR=$(date +%Y)
@@ -119,7 +144,16 @@ fi
 
 # Helper: get mtime for a file on the device
 get_device_file_mtime() {
-  ssh -i "$SSH_KEY" -p "$PHONE_PORT" "$PHONE_USER@$PHONE_IP" "stat -c '%Y' '$1'" 2>/dev/null
+  set +e
+  result=$(ssh -i "$SSH_KEY" -p "$PHONE_PORT" "$PHONE_USER@$PHONE_IP" "stat -c '%Y' '$1'" 2>/dev/null)
+  exit_code=$?
+  set -e
+  if [ $exit_code -ne 0 ]; then
+    debug_echo "DEBUG: Failed to get mtime for $1, using 0"
+    echo "0"
+  else
+    echo "$result"
+  fi
 }
 
 # Load copied files (filename + mtime) into an associative array for fast lookup
@@ -158,9 +192,10 @@ for SUBF in "${SELECTED_FOLDERS[@]}"; do
   echo -e "${WHITE}File selection options:${NC}"
   echo "  1) All files"
   echo "  2) Since last copy/move (default)"
-  echo "  3) After a date"
-  echo "  4) Before a date"
-  echo "  5) Between two dates"
+  echo "  3) Including and after a date"
+  echo "  4) Before a date (excluding)"
+  echo "  5) Between two dates (including both)"
+  echo "  6) Today only"
   echo -ne "${YELLOW}Choose file selection [2]: ${NC}"
   read fsel
   [[ -z "$fsel" ]] && fsel=2
@@ -187,6 +222,11 @@ for SUBF in "${SELECTED_FOLDERS[@]}"; do
       echo -ne "${YELLOW}Enter end date (format: YYYY-MM-DD): ${NC}"
       read END_DATE
       FILE_FILTER="between";;
+    6)
+      TODAY=$(date +%Y-%m-%d)
+      START_DATE="$TODAY"
+      END_DATE="$TODAY"
+      FILE_FILTER="today";;
     *) FILE_FILTER="since_last";;
   esac
 
@@ -198,7 +238,10 @@ for SUBF in "${SELECTED_FOLDERS[@]}"; do
   # --- Build file list on phone ---
   REMOTE_SUBFOLDER="$REMOTE_DIR/$SUBF"
   # List files, filter by date and EXCLUDE_BEFORE_DATE
+  # Use a simpler approach to avoid complex find command issues
   FIND_CMD="find '$REMOTE_SUBFOLDER' -type f"
+  
+  # Add date filters
   if [[ "$FILE_FILTER" == "after" && -n "$START_DATE" ]]; then
     # Use the later of EXCLUDE_BEFORE_DATE and START_DATE
     if [[ -n "$EXCLUDE_BEFORE_DATE" ]]; then
@@ -214,6 +257,10 @@ for SUBF in "${SELECTED_FOLDERS[@]}"; do
     FIND_CMD+=" ! -newermt '$END_DATE'"
   elif [[ "$FILE_FILTER" == "between" && -n "$START_DATE" && -n "$END_DATE" ]]; then
     FIND_CMD+=" -newermt '$START_DATE' ! -newermt '$END_DATE'"
+  elif [[ "$FILE_FILTER" == "today" && -n "$START_DATE" && -n "$END_DATE" ]]; then
+    # For today, we want files from START_DATE (today) but before END_DATE + 1 day
+    TOMORROW=$(date -d "$END_DATE +1 day" +%Y-%m-%d)
+    FIND_CMD+=" -newermt '$START_DATE' ! -newermt '$TOMORROW'"
   elif [[ "$FILE_FILTER" == "since_last" && -n "$LAST_SYNC_DATE" ]]; then
     FIND_CMD+=" -newermt '$LAST_SYNC_DATE'"
   elif [[ "$FILE_FILTER" == "all" ]]; then
@@ -221,87 +268,346 @@ for SUBF in "${SELECTED_FOLDERS[@]}"; do
       FIND_CMD+=" -newermt '$EXCLUDE_BEFORE_DATE'"
     fi
   fi
-  FILE_LIST=$(ssh -i "$SSH_KEY" -p "$PHONE_PORT" "$PHONE_USER@$PHONE_IP" "$FIND_CMD" | sort || true)
+  
+  # Get all files first, then filter by extension
+  debug_echo "DEBUG: Running find command: $FIND_CMD"
+  set +e
+  ALL_FILES=$(ssh -i "$SSH_KEY" -p "$PHONE_PORT" "$PHONE_USER@$PHONE_IP" "$FIND_CMD" 2>&1)
+  FIND_EXIT_CODE=$?
+  set -e
+  
+  if [ $FIND_EXIT_CODE -ne 0 ]; then
+    echo -e "${RED}Error: Find command failed with exit code $FIND_EXIT_CODE${NC}"
+    echo -e "${GRAY}DEBUG: Find command output:${NC}"
+    echo "$ALL_FILES"
+    exit 1
+  fi
+  
+  # Filter by file extensions
+  FILE_LIST=$(echo "$ALL_FILES" | grep -E '\.(jpg|jpeg|png|mp4|mov|cr2|nef|arw|dng|raf|rw2|orf|pef)$' | sort || true)
   FILE_COUNT=$(echo "$FILE_LIST" | grep -c . || true)
-
+  
+  debug_echo "DEBUG: Found $FILE_COUNT files matching criteria"
+  
   # Debug output removed for cleaner interface
-
+  debug_echo "DEBUG: About to check SSH connection"
+  
   if [ $? -ne 0 ]; then
     echo -e "${RED}Error: Failed to list files on the device. Check SSH connection, permissions, and path.${NC}"
     exit 1
   fi
-
-  # --- Filter out already copied files ---
+  
+  debug_echo "DEBUG: About to filter already copied files"
+  
+  # --- Filter out already copied files for copying, but keep track of all files for deletion ---
   FILTERED_FILE_LIST=""
+  ALL_FILES_FOR_DELETION=""  # Keep track of all files for deletion in move operations
+  file_count=0
+  debug_echo "DEBUG: Starting to process $FILE_COUNT files"
+  debug_echo "DEBUG: FILE_LIST length: $(echo "$FILE_LIST" | wc -l) lines"
+  debug_echo "DEBUG: First few lines of FILE_LIST:"
+  echo "$FILE_LIST" | head -3 | while read line; do
+    debug_echo "DEBUG:   $line"
+  done
+  
+  # Use a temporary file to avoid subshell issues
+  TEMP_FILE_LIST="/tmp/file_list_$$.txt"
+  echo "$FILE_LIST" > "$TEMP_FILE_LIST"
+  debug_echo "DEBUG: Created temp file with $(wc -l < "$TEMP_FILE_LIST") lines"
+  
   while read -r phone_file; do
-    relpath="${phone_file#$REMOTE_DIR/}"
-    mtime=$(get_device_file_mtime "$phone_file")
-    if [[ -z "${copied[$relpath|$mtime]}" ]]; then
-      FILTERED_FILE_LIST+="$phone_file|$mtime"$'\n'
+    file_count=$((file_count + 1))
+    if [[ $file_count -le 5 ]]; then
+      debug_echo "DEBUG: Processing file $file_count: $phone_file"
+    elif [[ $file_count -eq 6 ]]; then
+      debug_echo "DEBUG: ... (processing more files, showing first 5 only)"
     fi
-    # else: already copied (by name+mtime)
-  done <<< "$FILE_LIST"
-  FILE_LIST="$FILTERED_FILE_LIST"
-  FILE_COUNT=$(echo "$FILE_LIST" | grep -c . || true)
-
+    relpath="${phone_file#$REMOTE_DIR/}"
+    if [[ $file_count -le 5 ]]; then
+      debug_echo "DEBUG: Relative path: $relpath"
+    fi
+    mtime=$(get_device_file_mtime "$phone_file")
+    if [[ $file_count -le 5 ]]; then
+      debug_echo "DEBUG: Mtime: $mtime"
+    fi
+    
+    # For move operations, track all files for deletion but only copy new files
+    if [[ "$ACTION" == "move" ]]; then
+      # Always add to deletion list for move operations
+      ALL_FILES_FOR_DELETION+="$phone_file|$mtime"$'\n'
+      
+      # Only add to copy list if not already copied
+      if [[ -z "${copied[$relpath|$mtime]}" ]]; then
+        FILTERED_FILE_LIST+="$phone_file|$mtime"$'\n'
+        if [[ $file_count -le 5 ]]; then
+          debug_echo "DEBUG: Move operation - file not copied before, will copy and delete"
+        fi
+      else
+        if [[ $file_count -le 5 ]]; then
+          debug_echo "DEBUG: Move operation - file already copied, will only delete"
+        fi
+      fi
+    else
+      # For copy operations, check if already copied
+      if [[ -z "${copied[$relpath|$mtime]}" ]]; then
+        FILTERED_FILE_LIST+="$phone_file|$mtime"$'\n'
+        if [[ $file_count -le 5 ]]; then
+          debug_echo "DEBUG: File not copied before, adding to list"
+        fi
+      else
+        if [[ $file_count -le 5 ]]; then
+          debug_echo "DEBUG: File already copied, skipping"
+        fi
+      fi
+    fi
+  done < "$TEMP_FILE_LIST"
+  
+  # Clean up temp file
+  rm -f "$TEMP_FILE_LIST"
+  
+  debug_echo "DEBUG: Finished processing $file_count files"
+  
+  # For move operations, use the full list for deletion but filtered list for copying
+  if [[ "$ACTION" == "move" ]]; then
+    FILE_LIST_FOR_COPY="$FILTERED_FILE_LIST"
+    FILE_LIST_FOR_DELETE="$ALL_FILES_FOR_DELETION"
+    FILE_COUNT_FOR_COPY=$(echo "$FILE_LIST_FOR_COPY" | grep -c . || true)
+    FILE_COUNT_FOR_DELETE=$(echo "$FILE_LIST_FOR_DELETE" | grep -c . || true)
+    debug_echo "DEBUG: Move operation - $FILE_COUNT_FOR_COPY files to copy, $FILE_COUNT_FOR_DELETE files to delete"
+  else
+    FILE_LIST="$FILTERED_FILE_LIST"
+    FILE_COUNT=$(echo "$FILE_LIST" | grep -c . || true)
+    debug_echo "DEBUG: Copy operation - $FILE_COUNT files to copy"
+  fi
+  
+  debug_echo "DEBUG: After filtering, $FILE_COUNT files remain"
+  
   # Get oldest and newest file dates
+  debug_echo "DEBUG: About to get oldest/newest file dates"
   if [[ $FILE_COUNT -gt 0 ]]; then
-    OLDEST_FILE=$(ssh -i "$SSH_KEY" -p "$PHONE_PORT" "$PHONE_USER@$PHONE_IP" "$FIND_CMD -printf '%T@ %p\n' | sort -n | head -1 | cut -d' ' -f2-" || true)
-    NEWEST_FILE=$(ssh -i "$SSH_KEY" -p "$PHONE_PORT" "$PHONE_USER@$PHONE_IP" "$FIND_CMD -printf '%T@ %p\n' | sort -n | tail -1 | cut -d' ' -f2-" || true)
-    OLDEST_DATE=$(ssh -i "$SSH_KEY" -p "$PHONE_PORT" "$PHONE_USER@$PHONE_IP" "stat -c '%y' '$OLDEST_FILE' | cut -d'.' -f1" || true)
-    NEWEST_DATE=$(ssh -i "$SSH_KEY" -p "$PHONE_PORT" "$PHONE_USER@$PHONE_IP" "stat -c '%y' '$NEWEST_FILE' | cut -d'.' -f1" || true)
+    set +e
+    OLDEST_FILE=$(ssh -i "$SSH_KEY" -p "$PHONE_PORT" "$PHONE_USER@$PHONE_IP" "$FIND_CMD -printf '%T@ %p\n' | sort -n | head -1 | cut -d' ' -f2-" 2>&1)
+    OLDEST_EXIT_CODE=$?
+    set -e
+    debug_echo "DEBUG: Oldest file command exit code: $OLDEST_EXIT_CODE"
+    debug_echo "DEBUG: Oldest file: $OLDEST_FILE"
+    
+    set +e
+    NEWEST_FILE=$(ssh -i "$SSH_KEY" -p "$PHONE_PORT" "$PHONE_USER@$PHONE_IP" "$FIND_CMD -printf '%T@ %p\n' | sort -n | tail -1 | cut -d' ' -f2-" 2>&1)
+    NEWEST_EXIT_CODE=$?
+    set -e
+    debug_echo "DEBUG: Newest file command exit code: $NEWEST_EXIT_CODE"
+    debug_echo "DEBUG: Newest file: $NEWEST_FILE"
+    
+    if [ $OLDEST_EXIT_CODE -eq 0 ] && [ -n "$OLDEST_FILE" ]; then
+      set +e
+      OLDEST_DATE=$(ssh -i "$SSH_KEY" -p "$PHONE_PORT" "$PHONE_USER@$PHONE_IP" "stat -c '%y' '$OLDEST_FILE' | cut -d'.' -f1" 2>&1)
+      OLDEST_DATE_EXIT_CODE=$?
+      set -e
+      debug_echo "DEBUG: Oldest date command exit code: $OLDEST_DATE_EXIT_CODE"
+      debug_echo "DEBUG: Oldest date: $OLDEST_DATE"
+    else
+      OLDEST_DATE="-"
+    fi
+    
+    if [ $NEWEST_EXIT_CODE -eq 0 ] && [ -n "$NEWEST_FILE" ]; then
+      set +e
+      NEWEST_DATE=$(ssh -i "$SSH_KEY" -p "$PHONE_PORT" "$PHONE_USER@$PHONE_IP" "stat -c '%y' '$NEWEST_FILE' | cut -d'.' -f1" 2>&1)
+      NEWEST_DATE_EXIT_CODE=$?
+      set -e
+      debug_echo "DEBUG: Newest date command exit code: $NEWEST_DATE_EXIT_CODE"
+      debug_echo "DEBUG: Newest date: $NEWEST_DATE"
+    else
+      NEWEST_DATE="-"
+    fi
   else
     OLDEST_DATE="-"
     NEWEST_DATE="-"
   fi
 
+  debug_echo "DEBUG: About to show summary in terminal"
+  
   # --- Show summary in terminal (same format as log file) ---
   NOW=$(date '+%Y-%m-%d %H:%M:%S')
+  debug_echo "DEBUG: Generated NOW timestamp: $NOW"
   echo -e "\n${WHITE}[$NOW] Processing subfolder: $SUBF${NC}"
+  debug_echo "DEBUG: Displayed summary header"
   echo -e "  ${GRAY}Selection rule: ${WHITE}$FILE_FILTER${NC}"
+  debug_echo "DEBUG: Displayed selection rule"
   echo -e "  ${GRAY}Action: ${WHITE}$ACTION from $REMOTE_DIR/$SUBF to $LOCAL_DIR/$SUBF${NC}"
+  debug_echo "DEBUG: Displayed action line"
 
+  debug_echo "DEBUG: About to use rsync --dry-run to count files"
+  
   # Use rsync --dry-run to count files that will actually be copied
   LOCAL_SUBFOLDER="$LOCAL_DIR/$SUBF"
+  debug_echo "DEBUG: LOCAL_SUBFOLDER = $LOCAL_SUBFOLDER"
   mkdir -p "$LOCAL_SUBFOLDER"
+  debug_echo "DEBUG: Created local subfolder"
   RSYNC_OPTS="-av --progress"
   [[ "$ACTION" == "copy" ]] && RSYNC_OPTS+=" --ignore-existing"
+  debug_echo "DEBUG: RSYNC_OPTS = $RSYNC_OPTS"
   RSYNC_CMD="rsync $RSYNC_OPTS -e \"ssh -i $SSH_KEY -p $PHONE_PORT\" $PHONE_USER@$PHONE_IP:'$REMOTE_SUBFOLDER/' '$LOCAL_SUBFOLDER/'"
+  debug_echo "DEBUG: RSYNC_CMD = $RSYNC_CMD"
   DRY_RUN_CMD="$RSYNC_CMD --dry-run"
-  FILES_TO_COPY_COUNT=$(eval "$DRY_RUN_CMD" | grep -v '/$' | grep -v '^sending ' | grep -v '^sent ' | grep -v '^total size is ' | grep -c .)
-
-  if [[ $FILES_TO_COPY_COUNT -gt 0 ]]; then
-    echo -e "  ${GRAY}Number of files to be copied: ${WHITE}$FILES_TO_COPY_COUNT${NC}"
-    # Get oldest and newest file dates (optional, keep if useful)
-    OLDEST_FILE=$(ssh -i "$SSH_KEY" -p "$PHONE_PORT" "$PHONE_USER@$PHONE_IP" "$FIND_CMD -printf '%T@ %p\n' | sort -n | head -1 | cut -d' ' -f2-" || true)
-    NEWEST_FILE=$(ssh -i "$SSH_KEY" -p "$PHONE_PORT" "$PHONE_USER@$PHONE_IP" "$FIND_CMD -printf '%T@ %p\n' | sort -n | tail -1 | cut -d' ' -f2-" || true)
-    OLDEST_DATE=$(ssh -i "$SSH_KEY" -p "$PHONE_PORT" "$PHONE_USER@$PHONE_IP" "stat -c '%y' '$OLDEST_FILE' | cut -d'.' -f1" || true)
-    NEWEST_DATE=$(ssh -i "$SSH_KEY" -p "$PHONE_PORT" "$PHONE_USER@$PHONE_IP" "stat -c '%y' '$NEWEST_FILE' | cut -d'.' -f1" || true)
-    echo -e "  ${GRAY}Oldest file: ${WHITE}$OLDEST_DATE${NC}"
-    echo -e "  ${GRAY}Newest file: ${WHITE}$NEWEST_DATE${NC}"
+  debug_echo "DEBUG: About to run dry-run command to count files"
+  
+  set +e
+  DRY_RUN_OUTPUT=$(eval "$DRY_RUN_CMD" 2>&1)
+  DRY_RUN_COUNT_EXIT_CODE=$?
+  set -e
+  debug_echo "DEBUG: Dry-run count exit code: $DRY_RUN_COUNT_EXIT_CODE"
+  debug_echo "DEBUG: Dry-run output length: $(echo "$DRY_RUN_OUTPUT" | wc -l) lines"
+  
+  if [ $DRY_RUN_COUNT_EXIT_CODE -eq 0 ]; then
+    debug_echo "DEBUG: Processing dry-run output to count files"
+    set +e
+    # Simplify the grep command to avoid crashes
+    FILES_TO_COPY_COUNT=$(echo "$DRY_RUN_OUTPUT" | grep -v '/$' | grep -v '^sending ' | grep -v '^sent ' | grep -v '^total size is ' | grep -v '^receiving incremental file list' | grep -v '^building file list' | grep -v '^done$' | grep -v '^Raw$' | grep -v '^\.$' | wc -l)
+    GREP_EXIT_CODE=$?
+    set -e
+    debug_echo "DEBUG: Grep command exit code: $GREP_EXIT_CODE"
+    if [ $GREP_EXIT_CODE -ne 0 ]; then
+      debug_echo "DEBUG: Grep command failed, setting count to 0"
+      FILES_TO_COPY_COUNT=0
+    fi
+    debug_echo "DEBUG: File count calculation completed"
   else
+    debug_echo "DEBUG: Dry-run failed, setting count to 0"
+    FILES_TO_COPY_COUNT=0
+  fi
+  debug_echo "DEBUG: FILES_TO_COPY_COUNT: $FILES_TO_COPY_COUNT"
+
+  debug_echo "DEBUG: About to check if files need to be copied"
+  if [[ $FILES_TO_COPY_COUNT -gt 0 ]]; then
+    debug_echo "DEBUG: Files need to be copied, getting file dates"
+    # Get oldest and newest file dates (optional, keep if useful)
+    set +e
+    OLDEST_FILE=$(ssh -i "$SSH_KEY" -p "$PHONE_PORT" "$PHONE_USER@$PHONE_IP" "$FIND_CMD -printf '%T@ %p\n' | sort -n | head -1 | cut -d' ' -f2-" 2>&1)
+    OLDEST_EXIT_CODE=$?
+    set -e
+    debug_echo "DEBUG: Oldest file command exit code: $OLDEST_EXIT_CODE"
+    debug_echo "DEBUG: Oldest file: $OLDEST_FILE"
+    
+    set +e
+    NEWEST_FILE=$(ssh -i "$SSH_KEY" -p "$PHONE_PORT" "$PHONE_USER@$PHONE_IP" "$FIND_CMD -printf '%T@ %p\n' | sort -n | tail -1 | cut -d' ' -f2-" 2>&1)
+    NEWEST_EXIT_CODE=$?
+    set -e
+    debug_echo "DEBUG: Newest file command exit code: $NEWEST_EXIT_CODE"
+    debug_echo "DEBUG: Newest file: $NEWEST_FILE"
+    
+    if [ $OLDEST_EXIT_CODE -eq 0 ] && [ -n "$OLDEST_FILE" ]; then
+      set +e
+      OLDEST_DATE=$(ssh -i "$SSH_KEY" -p "$PHONE_PORT" "$PHONE_USER@$PHONE_IP" "stat -c '%y' '$OLDEST_FILE' | cut -d'.' -f1" 2>&1)
+      OLDEST_DATE_EXIT_CODE=$?
+      set -e
+      debug_echo "DEBUG: Oldest date command exit code: $OLDEST_DATE_EXIT_CODE"
+      debug_echo "DEBUG: Oldest date: $OLDEST_DATE"
+    else
+      OLDEST_DATE="-"
+    fi
+    
+    if [ $NEWEST_EXIT_CODE -eq 0 ] && [ -n "$NEWEST_FILE" ]; then
+      set +e
+      NEWEST_DATE=$(ssh -i "$SSH_KEY" -p "$PHONE_PORT" "$PHONE_USER@$PHONE_IP" "stat -c '%y' '$NEWEST_FILE' | cut -d'.' -f1" 2>&1)
+      NEWEST_DATE_EXIT_CODE=$?
+      set -e
+      debug_echo "DEBUG: Newest date command exit code: $NEWEST_DATE_EXIT_CODE"
+      debug_echo "DEBUG: Newest date: $NEWEST_DATE"
+    else
+      NEWEST_DATE="-"
+    fi
+    debug_echo "DEBUG: File date processing completed"
+  else
+    debug_echo "DEBUG: No files to copy, setting dates to -"
     echo -e "  ${GRAY}Number of files to be copied: ${WHITE}0${NC}"
     echo -e "  ${GRAY}Oldest file: ${WHITE}-${NC}"
     echo -e "  ${GRAY}Newest file: ${WHITE}-${NC}"
   fi
 
+  debug_echo "DEBUG: About to write to log file"
+  
   # Write to log file (same format)
   echo "" >> "$SUMMARY_LOG"
+  debug_echo "DEBUG: Wrote empty line to summary log"
   echo "[$NOW] Processing subfolder: $SUBF" >> "$SUMMARY_LOG"
+  debug_echo "DEBUG: Wrote summary header to log"
   echo "  Selection rule: $FILE_FILTER" >> "$SUMMARY_LOG"
+  debug_echo "DEBUG: Wrote selection rule to log"
   echo "  Action: $ACTION from $REMOTE_DIR/$SUBF to $LOCAL_DIR/$SUBF" >> "$SUMMARY_LOG"
-  echo "  Number of files to be copied: $FILES_TO_COPY_COUNT" >> "$SUMMARY_LOG"
+  debug_echo "DEBUG: Wrote action to log"
+  
+  # Show appropriate counts for move vs copy operations
+  if [[ "$ACTION" == "move" ]]; then
+    echo "  Number of files to be copied: $FILES_TO_COPY_COUNT" >> "$SUMMARY_LOG"
+    echo "  Number of files to be deleted from phone: $FILE_COUNT_FOR_DELETE" >> "$SUMMARY_LOG"
+    echo -e "  ${GRAY}Number of files to be copied: ${WHITE}$FILES_TO_COPY_COUNT${NC}"
+    echo -e "  ${GRAY}Number of files to be deleted from phone: ${WHITE}$FILE_COUNT_FOR_DELETE${NC}"
+  else
+    echo "  Number of files to be copied: $FILES_TO_COPY_COUNT" >> "$SUMMARY_LOG"
+    echo -e "  ${GRAY}Number of files to be copied: ${WHITE}$FILES_TO_COPY_COUNT${NC}"
+  fi
+  
   echo "  Oldest file: $OLDEST_DATE" >> "$SUMMARY_LOG"
+  debug_echo "DEBUG: Wrote oldest date to log"
   echo "  Newest file: $NEWEST_DATE" >> "$SUMMARY_LOG"
+  debug_echo "DEBUG: Wrote newest date to log"
 
+  debug_echo "DEBUG: About to check if files need to be copied"
   if [[ $FILES_TO_COPY_COUNT -eq 0 ]]; then
     echo -e "${YELLOW}  No files to copy or move for $SUBF. Nothing to do.${NC}"
     echo "  No files to copy or move for $SUBF. Nothing to do." >> "$SUMMARY_LOG"
+    
+    # For move operations, check if there are files on the phone that should be deleted
+    if [[ "$ACTION" == "move" ]]; then
+      echo -e "${YELLOW}Checking for files on phone that may need to be deleted...${NC}"
+      
+      # Get list of files that exist on phone
+      set +e
+      PHONE_FILES=$(ssh -i "$SSH_KEY" -p "$PHONE_PORT" "$PHONE_USER@$PHONE_IP" "find '$REMOTE_SUBFOLDER' -type f \( -name '*.jpg' -o -name '*.jpeg' -o -name '*.png' -o -name '*.mp4' -o -name '*.mov' -o -name '*.cr2' -o -name '*.nef' -o -name '*.arw' -o -name '*.dng' -o -name '*.raf' -o -name '*.rw2' -o -name '*.orf' -o -name '*.pef' \) | head -20" 2>&1)
+      PHONE_FILES_EXIT_CODE=$?
+      set -e
+      
+      if [ -n "$PHONE_FILES" ] && [ $PHONE_FILES_EXIT_CODE -eq 0 ]; then
+        echo -e "${YELLOW}Found files on phone that may have been copied previously:${NC}"
+        if [[ $DEBUG_MODE -eq 1 ]]; then
+          echo "$PHONE_FILES" | tail -10
+        else
+          echo "$PHONE_FILES" | tail -5
+        fi
+        echo -ne "${YELLOW}Delete these files from phone? (y/N): ${NC}"
+        read delete_confirm
+        if [[ "$delete_confirm" =~ ^[Yy]$ ]]; then
+          echo -e "${YELLOW}Deleting previously copied files from phone...${NC}"
+          set +e
+          # Use a temporary file to avoid subshell issues
+          TEMP_PHONE_DELETE="/tmp/phone_delete_$$.txt"
+          echo "$PHONE_FILES" > "$TEMP_PHONE_DELETE"
+          while read -r phone_file; do
+            if [ -n "$phone_file" ]; then
+              filename=$(basename "$phone_file")
+              echo -e "${YELLOW}Deleting from phone: $filename${NC}"
+              ssh -i "$SSH_KEY" -p "$PHONE_PORT" "$PHONE_USER@$PHONE_IP" "rm -f '$phone_file'"
+              NOW=$(date '+%Y-%m-%d %H:%M:%S')
+              echo "$NOW,deleted,$phone_file,,success" >> "$FILE_LOG"
+            fi
+          done < "$TEMP_PHONE_DELETE"
+          rm -f "$TEMP_PHONE_DELETE"
+          set -e
+          echo -e "${GREEN}Deletion of previously copied files complete.${NC}"
+        else
+          echo -e "${RED}Deletion cancelled.${NC}"
+        fi
+      else
+        echo -e "${GRAY}No files found on phone to delete.${NC}"
+      fi
+    fi
+    
     continue
   fi
 
   # --- Deletion preview ---
-  if [[ $DELETE_COPIED -eq 1 && $FILE_COUNT -gt 0 ]]; then
+  if [[ "$ACTION" == "copy" && $DELETE_COPIED -eq 1 && $FILE_COUNT -gt 0 ]]; then
     # Only delete files that are in the copy log
     if [ -f "$COPY_LOG_FILE" ]; then
       FILES_TO_DELETE=$(comm -12 <(echo "$FILE_LIST" | sort || true) <(awk '{print $1}' "$COPY_LOG_FILE" | sort || true) || true)
@@ -311,6 +617,9 @@ for SUBF in "${SELECTED_FOLDERS[@]}"; do
     fi
     echo -e "  ${GRAY}Files to be deleted: ${WHITE}$DELETE_COUNT${NC}"
     echo "  Files to be deleted: $DELETE_COUNT" >> "$SUMMARY_LOG"
+  elif [[ "$ACTION" == "move" ]]; then
+    echo -e "  ${GRAY}Files will be deleted from phone after successful transfer${NC}"
+    echo "  Files will be deleted from phone after successful transfer" >> "$SUMMARY_LOG"
   fi
 
   # --- Confirm ---
@@ -329,24 +638,204 @@ for SUBF in "${SELECTED_FOLDERS[@]}"; do
   [[ "$ACTION" == "copy" ]] && RSYNC_OPTS+=" --ignore-existing"
   RSYNC_CMD="rsync $RSYNC_OPTS -e \"ssh -i $SSH_KEY -p $PHONE_PORT\" $PHONE_USER@$PHONE_IP:'$REMOTE_SUBFOLDER/' '$LOCAL_SUBFOLDER/'"
   echo -e "${GREEN}Starting $ACTION for $SUBF...${NC}"
-  # Perform sync and log files after completion
-  eval "$RSYNC_CMD --progress"
-
-  # Log all files that were copied/moved by checking what's new in the local folder
-  find "$LOCAL_SUBFOLDER" -type f -newer "$FILE_LOG" 2>/dev/null | while read -r local_file; do
-    rel_path="${local_file#$LOCAL_SUBFOLDER/}"
-    NOW=$(date '+%Y-%m-%d %H:%M:%S')
-    src="$REMOTE_SUBFOLDER/$rel_path"
-    dest="$local_file"
-    echo "$NOW,$ACTION,$src,$dest,success" >> "$FILE_LOG"
-    # If move, delete from phone after successful transfer
-    if [[ "$ACTION" == "move" ]]; then
-      ssh -i "$SSH_KEY" -p "$PHONE_PORT" "$PHONE_USER@$PHONE_IP" "rm -f '$src'" && \
-      echo "$NOW,deleted,$src,,success" >> "$FILE_LOG"
+  
+  # Get list of files that will be transferred using dry-run
+  DRY_RUN_CMD="$RSYNC_CMD --dry-run"
+  debug_echo "DEBUG: Running dry-run command..."
+  debug_echo "DEBUG: Command: $DRY_RUN_CMD"
+  
+  # Temporarily disable error exit to capture the error
+  set +e
+  DRY_RUN_OUTPUT=$(eval "$DRY_RUN_CMD" 2>&1)
+  DRY_RUN_EXIT_CODE=$?
+  set -e
+  
+  debug_echo "DEBUG: Dry-run exit code: $DRY_RUN_EXIT_CODE"
+  debug_echo "DEBUG: Dry-run output:"
+  if [[ $DEBUG_MODE -eq 1 ]]; then
+    echo "$DRY_RUN_OUTPUT"
+  else
+    # In normal mode, show only the first few lines
+    echo "$DRY_RUN_OUTPUT" | head -5
+    if [[ $(echo "$DRY_RUN_OUTPUT" | wc -l) -gt 5 ]]; then
+      echo -e "${GRAY}... and $(($(echo "$DRY_RUN_OUTPUT" | wc -l) - 5)) more lines${NC}"
     fi
-  done
+  fi
+  
+  debug_echo "DEBUG: About to process dry-run output"
+  
+  if [ $DRY_RUN_EXIT_CODE -ne 0 ]; then
+    echo -e "${RED}Warning: Dry-run failed with exit code $DRY_RUN_EXIT_CODE, but continuing...${NC}"
+    FILES_TO_TRANSFER=""
+  else
+    debug_echo "DEBUG: Processing dry-run output to extract filenames"
+    set +e
+    FILES_TO_TRANSFER=$(echo "$DRY_RUN_OUTPUT" | grep -v '/$' | grep -v '^sending ' | grep -v '^sent ' | grep -v '^total size is ' | grep -v '^receiving incremental file list' | grep -v '^building file list' | grep -v '^done$' | sed 's/^.*\///' | grep -v '^$' | grep -v '^\.$' | grep -v '^Raw$')
+    TRANSFER_EXIT_CODE=$?
+    set -e
+    debug_echo "DEBUG: Transfer filename extraction exit code: $TRANSFER_EXIT_CODE"
+    if [ $TRANSFER_EXIT_CODE -ne 0 ]; then
+      debug_echo "DEBUG: Transfer filename extraction failed, setting to empty"
+      FILES_TO_TRANSFER=""
+    fi
+  fi
+  
+  # Debug: Show what files will be transferred
+  debug_echo "DEBUG: Files to transfer:"
+  if [[ $DEBUG_MODE -eq 1 ]]; then
+    echo "$FILES_TO_TRANSFER" | tail -20
+    if [[ $(echo "$FILES_TO_TRANSFER" | wc -l) -gt 20 ]]; then
+      echo -e "${GRAY}... and $(($(echo "$FILES_TO_TRANSFER" | wc -l) - 20)) more files${NC}"
+    fi
+  else
+    # In normal mode, show only the last 10 files
+    if [[ -n "$FILES_TO_TRANSFER" ]]; then
+      echo "$FILES_TO_TRANSFER" | tail -10
+      if [[ $(echo "$FILES_TO_TRANSFER" | wc -l) -gt 10 ]]; then
+        echo -e "${GRAY}... and $(($(echo "$FILES_TO_TRANSFER" | wc -l) - 10)) more files${NC}"
+      fi
+    fi
+  fi
+  debug_echo "DEBUG: Action is: $ACTION"
+  
+  # Also check what files exist on the phone
+  debug_echo "DEBUG: Checking what files exist on phone..."
+  set +e
+  PHONE_FILES=$(ssh -i "$SSH_KEY" -p "$PHONE_PORT" "$PHONE_USER@$PHONE_IP" "find '$REMOTE_SUBFOLDER' -type f -name '*.jpg' -o -name '*.jpeg' -o -name '*.png' -o -name '*.mp4' -o -name '*.mov' | head -10" 2>&1)
+  PHONE_FILES_EXIT_CODE=$?
+  set -e
+  
+  debug_echo "DEBUG: Phone files check exit code: $PHONE_FILES_EXIT_CODE"
+  debug_echo "DEBUG: Sample files on phone (showing last 10):"
+  if [[ $DEBUG_MODE -eq 1 ]]; then
+    echo "$PHONE_FILES" | tail -10
+    if [[ $(echo "$PHONE_FILES" | wc -l) -gt 10 ]]; then
+      echo -e "${GRAY}... and $(($(echo "$PHONE_FILES" | wc -l) - 10)) more files${NC}"
+    fi
+  else
+    # In normal mode, show only the last 5 files
+    if [[ -n "$PHONE_FILES" ]]; then
+      echo "$PHONE_FILES" | tail -5
+      if [[ $(echo "$PHONE_FILES" | wc -l) -gt 5 ]]; then
+        echo -e "${GRAY}... and $(($(echo "$PHONE_FILES" | wc -l) - 5)) more files${NC}"
+      fi
+    fi
+  fi
+  
+  # Perform sync
+  debug_echo "DEBUG: Running actual rsync..."
+  set +e
+  eval "$RSYNC_CMD --progress"
+  RSYNC_EXIT_CODE=$?
+  set -e
+  
+  debug_echo "DEBUG: Rsync exit code: $RSYNC_EXIT_CODE"
+  
+  if [ $RSYNC_EXIT_CODE -ne 0 ]; then
+    echo -e "${RED}Warning: Rsync failed with exit code $RSYNC_EXIT_CODE, but continuing...${NC}"
+  fi
+
+  # Process each file that was transferred
+  if [ -n "$FILES_TO_TRANSFER" ]; then
+    debug_echo "DEBUG: Processing $(echo "$FILES_TO_TRANSFER" | wc -l) files"
+    # Create a temporary file to store files to delete
+    TEMP_DELETE_LIST="/tmp/files_to_delete_$$.txt"
+    echo "$FILES_TO_TRANSFER" > "$TEMP_DELETE_LIST"
+    
+    # Process each file for logging
+    set +e
+    while read -r filename; do
+      if [ -n "$filename" ]; then
+        NOW=$(date '+%Y-%m-%d %H:%M:%S')
+        src="$REMOTE_SUBFOLDER/$filename"
+        dest="$LOCAL_SUBFOLDER/$filename"
+        echo "$NOW,$ACTION,$src,$dest,success" >> "$FILE_LOG"
+      fi
+    done < "$TEMP_DELETE_LIST"
+    set -e
+    
+    # If move, delete files from phone after successful transfer
+    if [[ "$ACTION" == "move" ]]; then
+      echo -e "${YELLOW}DEBUG: Starting deletion process for move operation${NC}"
+      echo -e "${YELLOW}Deleting files from phone...${NC}"
+      
+      # Read the temp file and delete each file - avoid subshell issues
+      set +e
+      while read -r filename; do
+        if [ -n "$filename" ]; then
+          src="$REMOTE_SUBFOLDER/$filename"
+          echo -e "${YELLOW}Deleting from phone: $filename${NC}"
+          debug_echo "DEBUG: Running: ssh -i $SSH_KEY -p $PHONE_PORT $PHONE_USER@$PHONE_IP rm -f '$src'"
+          ssh -i "$SSH_KEY" -p "$PHONE_PORT" "$PHONE_USER@$PHONE_IP" "rm -f '$src'"
+          NOW=$(date '+%Y-%m-%d %H:%M:%S')
+          echo "$NOW,deleted,$src,,success" >> "$FILE_LOG"
+        fi
+      done < "$TEMP_DELETE_LIST"
+      set -e
+      
+      echo -e "${GREEN}Deletion from phone complete.${NC}"
+    else
+      echo -e "${GRAY}DEBUG: Action is not move, skipping deletion${NC}"
+    fi
+    
+    # Clean up temp file
+    rm -f "$TEMP_DELETE_LIST"
+  else
+    echo -e "${YELLOW}No new files were transferred.${NC}"
+    debug_echo "DEBUG: FILES_TO_TRANSFER is empty"
+    debug_echo "DEBUG: This could mean:"
+    echo -e "${GRAY}  - No files match your date criteria${NC}"
+    echo -e "${GRAY}  - All files have already been copied${NC}"
+    echo -e "${GRAY}  - Only directories were found (no files)${NC}"
+    
+    # For move operations, also delete files that have already been copied
+    if [[ "$ACTION" == "move" ]]; then
+      echo -e "${YELLOW}DEBUG: Move operation with no new files - checking for previously copied files to delete${NC}"
+      
+      # For move operations, we should only delete the files that were selected for this operation
+      # Use the original FILE_LIST that was filtered by date criteria, not all files on phone
+      if [[ -n "$FILE_LIST_FOR_DELETE" ]]; then
+        echo -e "${YELLOW}Found files on phone that match your date criteria:${NC}"
+        if [[ $DEBUG_MODE -eq 1 ]]; then
+          echo "$FILE_LIST_FOR_DELETE" | tail -10
+        else
+          echo "$FILE_LIST_FOR_DELETE" | tail -5
+        fi
+        echo -ne "${YELLOW}Delete these files from phone? (y/N): ${NC}"
+        read delete_confirm
+        if [[ "$delete_confirm" =~ ^[Yy]$ ]]; then
+          echo -e "${YELLOW}Deleting selected files from phone...${NC}"
+          set +e
+          # Use a temporary file to avoid subshell issues
+          TEMP_PHONE_DELETE="/tmp/phone_delete_$$.txt"
+          echo "$FILE_LIST_FOR_DELETE" > "$TEMP_PHONE_DELETE"
+          while read -r phone_file; do
+            if [ -n "$phone_file" ]; then
+              filename=$(basename "$phone_file")
+              echo -e "${YELLOW}Deleting from phone: $filename${NC}"
+              ssh -i "$SSH_KEY" -p "$PHONE_PORT" "$PHONE_USER@$PHONE_IP" "rm -f '$phone_file'"
+              NOW=$(date '+%Y-%m-%d %H:%M:%S')
+              echo "$NOW,deleted,$phone_file,,success" >> "$FILE_LOG"
+            fi
+          done < "$TEMP_PHONE_DELETE"
+          rm -f "$TEMP_PHONE_DELETE"
+          set -e
+          echo -e "${GREEN}Deletion of selected files complete.${NC}"
+        else
+          echo -e "${RED}Deletion cancelled.${NC}"
+        fi
+      else
+        echo -e "${GRAY}No files found matching your date criteria.${NC}"
+      fi
+    fi
+  fi
+  
   echo -e " "
-  echo -e "The files have been $ACTIONd to $LOCAL_SUBFOLDER"
+  if [[ "$ACTION" == "move" ]]; then
+    echo -e "The files have been moved to $LOCAL_SUBFOLDER"
+  else
+    echo -e "The files have been copied to $LOCAL_SUBFOLDER"
+  fi
   echo -e " "
   echo -e "${GREEN}  $ACTION complete for $SUBF.${NC}"
   echo -e " "
